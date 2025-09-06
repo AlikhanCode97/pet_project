@@ -1,12 +1,12 @@
 package com.example.Games.user;
 
-import com.example.Games.user.balance.Balance;
 import com.example.Games.user.balance.BalanceRepository;
 import com.example.Games.user.dto.*;
 import com.example.Games.user.role.Role;
 import com.example.Games.user.role.RoleRepository;
 import com.example.Games.config.security.CustomUserDetails;
 import com.example.Games.config.security.JwtService;
+import com.example.Games.config.security.TokenBlacklistService;
 import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,8 +18,8 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -34,9 +34,10 @@ public class AuthService {
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
     private final BalanceRepository balanceRepository;
+    private final TokenBlacklistService tokenBlacklistService;
 
+    @Transactional
     public TokenResponse register(RegisterRequest request) {
-
         log.info("Registering new user: {}", request.username());
 
         // Check if user already exists
@@ -47,10 +48,10 @@ public class AuthService {
         if (userRepository.existsByEmail(request.email())) {
             throw new IllegalArgumentException("Email already exists: " + request.email());
         }
+        
         // Get the requested role
         Role userRole = roleRepository.findByName(request.roleType())
                 .orElseThrow(() -> new IllegalArgumentException("Role not found: " + request.roleType()));
-
 
         User user = User.builder()
                 .username(request.username())
@@ -61,12 +62,8 @@ public class AuthService {
 
         user = userRepository.save(user);
 
-        Balance balance = Balance.builder()
-                .user(user)
-                .amount(BigDecimal.ZERO)
-                .build();
-
-        balanceRepository.save(balance);
+        // Balance creation is now handled by BalanceService when needed
+        // This ensures consistency and proper error handling
         log.info("Successfully registered user: {} with role: {}", user.getUsername(), user.getRole().getName());
 
         CustomUserDetails userDetails = new CustomUserDetails(user);
@@ -129,6 +126,26 @@ public class AuthService {
         } catch (JwtException | IllegalArgumentException e) {
             log.warn("Invalid refresh token: {}", e.getMessage());
             throw new BadCredentialsException("Invalid refresh token");
+        }
+    }
+
+    public void logout(String accessToken, String refreshToken) {
+        log.info("Processing logout request");
+        
+        try {
+            // Blacklist both access and refresh tokens
+            if (accessToken != null && !accessToken.trim().isEmpty()) {
+                tokenBlacklistService.blacklistToken(accessToken);
+            }
+            
+            if (refreshToken != null && !refreshToken.trim().isEmpty()) {
+                tokenBlacklistService.blacklistToken(refreshToken);
+            }
+            
+            log.info("Successfully logged out user - tokens blacklisted");
+        } catch (Exception e) {
+            log.error("Error during logout: {}", e.getMessage());
+            // Don't throw exception - logout should always succeed from user perspective
         }
     }
 

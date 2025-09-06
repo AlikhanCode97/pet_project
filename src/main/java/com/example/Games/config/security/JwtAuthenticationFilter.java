@@ -26,9 +26,11 @@ import java.util.List;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
+    private final TokenBlacklistService tokenBlacklistService;
     
-    public JwtAuthenticationFilter(JwtService jwtService) {
+    public JwtAuthenticationFilter(JwtService jwtService, TokenBlacklistService tokenBlacklistService) {
         this.jwtService = jwtService;
+        this.tokenBlacklistService = tokenBlacklistService;
     }
 
     @Override
@@ -65,6 +67,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             // Check if this is a refresh token (should not be used for authentication)
             if (jwtService.isRefreshToken(jwt)) {
                 log.warn("Refresh token used for authentication attempt for user: {}", username);
+                return;
+            }
+            
+            // Check if token is blacklisted (logged out)
+            if (tokenBlacklistService.isTokenBlacklisted(jwt)) {
+                log.debug("Blacklisted token used for authentication attempt for user: {}", username);
                 return;
             }
 
