@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Simple in-memory token blacklist service.
- * In production, you might want to use Redis or a database-backed solution.
+ * In production, might want to use Redis or a database-backed solution.
  */
 @Slf4j
 @Service
@@ -29,9 +29,6 @@ public class TokenBlacklistService {
         cleanupExecutor.scheduleAtFixedRate(this::removeExpiredTokens, 1, 1, TimeUnit.HOURS);
     }
 
-    /**
-     * Add a token to the blacklist (for logout functionality)
-     */
     public void blacklistToken(String token) {
         if (token != null && !token.trim().isEmpty()) {
             blacklistedTokens.add(token.trim());
@@ -39,16 +36,10 @@ public class TokenBlacklistService {
         }
     }
 
-    /**
-     * Check if a token is blacklisted
-     */
     public boolean isTokenBlacklisted(String token) {
         return token != null && blacklistedTokens.contains(token.trim());
     }
 
-    /**
-     * Remove expired tokens from the blacklist to prevent memory leaks
-     */
     private void removeExpiredTokens() {
         int initialSize = blacklistedTokens.size();
         
@@ -56,7 +47,6 @@ public class TokenBlacklistService {
             try {
                 return jwtService.isTokenExpired(token);
             } catch (Exception e) {
-                // If we can't parse the token, consider it expired and remove it
                 return true;
             }
         });
@@ -67,16 +57,10 @@ public class TokenBlacklistService {
         }
     }
 
-    /**
-     * Get the current number of blacklisted tokens (for monitoring)
-     */
     public int getBlacklistSize() {
         return blacklistedTokens.size();
     }
 
-    /**
-     * Clear all blacklisted tokens (for testing or emergency situations)
-     */
     public void clearBlacklist() {
         blacklistedTokens.clear();
         log.warn("Token blacklist cleared");

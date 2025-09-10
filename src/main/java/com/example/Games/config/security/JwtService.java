@@ -2,7 +2,6 @@ package com.example.Games.config.security;
 
 import io.jsonwebtoken.*;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import javax.crypto.SecretKey;
@@ -93,30 +92,6 @@ public class JwtService {
         return extractClaim(token, claims -> (String) claims.get("tokenType"));
     }
 
-    public boolean isTokenValid(String token, UserDetails userDetails) {
-        try {
-            final String username = extractUsername(token);
-            return username.equals(userDetails.getUsername()) && !isTokenExpired(token);
-        } catch (JwtException | IllegalArgumentException e) {
-            return false;
-        }
-    }
-
-    public boolean isRefreshToken(String token) {
-        try {
-            return "refresh".equals(extractTokenType(token));
-        } catch (JwtException | IllegalArgumentException e) {
-            return false;
-        }
-    }
-
-    public boolean isTokenExpired(String token) {
-        try {
-            return extractExpiration(token).before(new Date());
-        } catch (Exception e) {
-            return true; // Consider invalid tokens as expired
-        }
-    }
     private Date extractExpiration(String token) {
         return extractClaim(token, Claims::getExpiration);
     }
@@ -138,6 +113,31 @@ public class JwtService {
                 .getBody();
     }
 
+    public boolean isRefreshToken(String token) {
+        try {
+            return "refresh".equals(extractTokenType(token));
+        } catch (JwtException | IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    public boolean isTokenExpired(String token) {
+        try {
+            return extractExpiration(token).before(new Date());
+        } catch (Exception e) {
+            return true; // Consider invalid tokens as expired
+        }
+    }
+
+    public boolean isTokenValid(String token, UserDetails userDetails) {
+        try {
+            final String username = extractUsername(token);
+            return username.equals(userDetails.getUsername()) && !isTokenExpired(token);
+        } catch (JwtException | IllegalArgumentException e) {
+            return false;
+        }
+    }
+
     public long getExpirationTime() {
         return TimeUnit.SECONDS.toMillis(jwtExpiration);
     }
@@ -146,7 +146,6 @@ public class JwtService {
         return TimeUnit.SECONDS.toMillis(refreshExpiration);
     }
 
-    // Helper methods to extract data from different UserDetails implementations
     private Long extractUserIdFromUserDetails(UserDetails userDetails) {
         if (userDetails instanceof CustomUserDetails customUserDetails) {
             return customUserDetails.getUserId();

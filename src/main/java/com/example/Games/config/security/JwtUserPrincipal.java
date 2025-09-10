@@ -1,5 +1,6 @@
 package com.example.Games.config.security;
 
+import lombok.Getter;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -7,10 +8,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import java.util.Collection;
 import java.util.List;
 
-/**
- * Lightweight UserDetails implementation that works with JWT claims only.
- * No database access required for basic authorization decisions.
- */
+
 public record JwtUserPrincipal(
         Long userId,
         String username,
