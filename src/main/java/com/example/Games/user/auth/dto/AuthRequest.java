@@ -1,4 +1,4 @@
-package com.example.Games.user.dto;
+package com.example.Games.user.auth.dto;
 
 import jakarta.validation.constraints.NotBlank;
 

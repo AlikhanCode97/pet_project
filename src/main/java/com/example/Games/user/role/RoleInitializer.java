@@ -8,7 +8,6 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 @Component
 @RequiredArgsConstructor
@@ -25,9 +24,12 @@ public class RoleInitializer implements ApplicationRunner {
 
         List<RoleType> roles = List.of(RoleType.values());
 
-        roles.stream().filter(roleType -> !existing.contains(roleType))
-                .forEach(roleType -> roleRepository.save(Role.builder()
-                        .name(roleType)
-                        .build()));
+        List<Role> missingRoles = roles.stream()
+                .filter(roleType -> !existing.contains(roleType))
+                .map(roleType -> Role.builder().name(roleType).build())
+                .toList();
+
+        roleRepository.saveAll(missingRoles);
+
     }
 }

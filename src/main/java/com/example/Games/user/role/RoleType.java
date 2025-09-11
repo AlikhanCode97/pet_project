@@ -1,6 +1,7 @@
 package com.example.Games.user.role;
 
 public enum RoleType {
-    USER,
-    DEVELOPER
+    ROLE_USER,
+    ROLE_DEVELOPER,
+    ROLE_ADMIN
 }
