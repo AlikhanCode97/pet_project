@@ -1,15 +1,12 @@
 package com.example.Games.user.auth;
 
-import com.example.Games.user.auth.dto.AuthRequest;
-import com.example.Games.user.auth.dto.RefreshTokenRequest;
-import com.example.Games.user.auth.dto.RegisterRequest;
-import com.example.Games.user.auth.dto.TokenResponse;
+import com.example.Games.user.auth.dto.*;
 import com.example.Games.user.role.Role;
 import com.example.Games.user.role.RoleRepository;
 import com.example.Games.config.security.CustomUserDetails;
 import com.example.Games.config.security.JwtService;
 import com.example.Games.config.security.TokenBlacklistService;
-import com.example.Games.config.exception.UserAlreadyExistsException;
+import com.example.Games.config.exception.user.UserAlreadyExistsException;
 import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -68,6 +65,7 @@ public class AuthService {
         return generateTokenResponse(userDetails);
     }
 
+    @Transactional
     public TokenResponse login(AuthRequest request) {
         log.info("Login attempt for user: {}", request.username());
 
@@ -81,7 +79,6 @@ public class AuthService {
 
             CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
             
-            // Update last login time
             User user = userRepository.findByUsername(userDetails.getUsername())
                     .orElseThrow(() -> new UsernameNotFoundException("User not found: " + userDetails.getUsername()));
             user.updateLastLogin();
@@ -96,6 +93,7 @@ public class AuthService {
         }
     }
 
+    @Transactional
     public TokenResponse refreshToken(RefreshTokenRequest request) {
         log.info("Refresh token request received");
 
@@ -103,7 +101,7 @@ public class AuthService {
             String refreshToken = request.refreshToken();
 
             if (!jwtService.isRefreshToken(refreshToken)) {
-                throw new JwtException("Invalid refresh token");
+                throw new BadCredentialsException("Not a refresh token");
             }
 
             String username = jwtService.extractUsername(refreshToken);
@@ -113,12 +111,12 @@ public class AuthService {
 
             CustomUserDetails userDetails = new CustomUserDetails(user);
 
-            if (jwtService.isTokenValid(refreshToken, userDetails)) {
-                log.info("Refreshing tokens for user: {}", username);
-                return generateTokenResponse(userDetails);
-            } else {
-                throw new JwtException("Invalid or expired refresh token");
+            if (!jwtService.isTokenValid(refreshToken, userDetails)) {
+                throw new BadCredentialsException("Invalid or expired refresh token");
             }
+
+            log.info("Refreshing tokens for user: {}", username);
+            return generateTokenResponse(userDetails);
 
         } catch (JwtException | IllegalArgumentException e) {
             log.warn("Invalid refresh token: {}", e.getMessage());
@@ -126,22 +124,67 @@ public class AuthService {
         }
     }
 
-    public void logout(String accessToken, String refreshToken) {
+    public void logout(String authHeader, LogoutRequest request) {
         log.info("Processing logout request");
         
-        try {
-            if (accessToken != null && !accessToken.trim().isEmpty()) {
+        boolean accessTokenProcessed = false;
+        boolean refreshTokenProcessed = false;
+
+        String accessToken = extractTokenFromHeader(authHeader);
+        if (accessToken != null && !accessToken.trim().isEmpty()) {
+            try {
+                jwtService.extractUsername(accessToken);
                 tokenBlacklistService.blacklistToken(accessToken);
+                log.info("Access token blacklisted successfully");
+                accessTokenProcessed = true;
+            } catch (JwtException e) {
+                log.warn("Invalid access token format: {}", e.getMessage());
+                throw new BadCredentialsException("Invalid access token");
+            } catch (Exception e) {
+                log.error("Failed to blacklist access token: {}", e.getMessage());
+                throw new RuntimeException("Logout failed: unable to invalidate access token");
             }
-            
-            if (refreshToken != null && !refreshToken.trim().isEmpty()) {
-                tokenBlacklistService.blacklistToken(refreshToken);
-            }
-            
-            log.info("Successfully logged out user - tokens blacklisted");
-        } catch (Exception e) {
-            log.error("Error during logout: {}", e.getMessage());
+        } else {
+            log.warn("No access token found in Authorization header");
         }
+
+        if (request != null && request.refreshToken() != null && !request.refreshToken().trim().isEmpty()) {
+            try {
+                // Validate refresh token format and type
+                if (!jwtService.isRefreshToken(request.refreshToken())) {
+                    throw new BadCredentialsException("Provided token is not a refresh token");
+                }
+                jwtService.extractUsername(request.refreshToken()); // Validate format
+                tokenBlacklistService.blacklistToken(request.refreshToken());
+                log.info("Refresh token blacklisted successfully");
+                refreshTokenProcessed = true;
+            } catch (JwtException e) {
+                log.warn("Invalid refresh token format: {}", e.getMessage());
+                throw new BadCredentialsException("Invalid refresh token");
+            } catch (BadCredentialsException e) {
+                throw e; // Re-throw business exceptions
+            } catch (Exception e) {
+                log.error("Failed to blacklist refresh token: {}", e.getMessage());
+                throw new RuntimeException("Logout failed: unable to invalidate refresh token");
+            }
+        } else {
+            log.debug("No refresh token provided in request body");
+        }
+
+        if (!accessTokenProcessed && !refreshTokenProcessed) {
+            log.warn("Logout attempted with no valid tokens");
+            throw new BadCredentialsException("No valid tokens provided for logout");
+        }
+        
+        log.info("User successfully logged out - {} tokens blacklisted", 
+                (accessTokenProcessed ? 1 : 0) + (refreshTokenProcessed ? 1 : 0));
+    }
+    
+    private String extractTokenFromHeader(String authHeader) {
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            return authHeader.substring(7);
+        }
+        return null;
     }
 
     private TokenResponse generateTokenResponse(CustomUserDetails userDetails) {
