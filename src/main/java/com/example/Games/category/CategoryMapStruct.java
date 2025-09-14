@@ -1,19 +1,24 @@
 package com.example.Games.category;
 
+import com.example.Games.category.dto.CategoryRequest;
+import com.example.Games.category.dto.CategoryResponse;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
 import java.util.List;
 
 @Mapper(componentModel = "spring")
-
 public interface CategoryMapStruct {
 
-    // Map from DTO to Entity (no id, rating, or releaseDate in request)
     @Mapping(target = "id", ignore = true)
+    @Mapping(target = "games", ignore = true)
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "updatedAt", ignore = true)
     Category toEntity(CategoryRequest request);
-    // Map from Entity to Response
+
+    @Mapping(target = "gameCount", expression = "java(category.getGameCount())")
     CategoryResponse toDto(Category category);
 
     List<CategoryResponse> toDtoList(List<Category> categories);
+
 }

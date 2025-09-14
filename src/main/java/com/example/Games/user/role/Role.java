@@ -20,8 +20,4 @@ public class Role {
     @Column(unique = true, nullable = false)
     @EqualsAndHashCode.Include
     private RoleType name;
-
-    public void updateName(RoleType name){
-        this.name = name;
-    }
 }
