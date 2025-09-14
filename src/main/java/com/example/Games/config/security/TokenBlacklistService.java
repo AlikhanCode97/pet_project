@@ -2,17 +2,12 @@ package com.example.Games.config.security;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-/**
- * Simple in-memory token blacklist service.
- * In production, might want to use Redis or a database-backed solution.
- */
 @Slf4j
 @Service
 public class TokenBlacklistService {
@@ -47,6 +42,8 @@ public class TokenBlacklistService {
             try {
                 return jwtService.isTokenExpired(token);
             } catch (Exception e) {
+                // If token is invalid/malformed, consider it expired and remove it
+                log.debug("Removing invalid token from blacklist: {}", e.getMessage());
                 return true;
             }
         });

@@ -95,8 +95,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     log.warn("Invalid JWT token for user: {}", username);
                 }
             }
+        } catch (JwtException e) {
+            log.warn("JWT validation failed for user {}: {}", username, e.getMessage());
         } catch (Exception e) {
-            log.error("Error authenticating user {}: {}", username, e.getMessage());
+            log.error("Unexpected error authenticating user {}: {}", username, e.getMessage());
         }
     }
 

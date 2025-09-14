@@ -23,7 +23,26 @@ public class JwtService {
     private Long refreshExpiration;
 
     private SecretKey getSigningKey() {
-        byte[] keyBytes = Base64.getDecoder().decode(jwtSecret);
+        byte[] keyBytes;
+
+        try {
+            keyBytes = Base64.getDecoder().decode(jwtSecret);
+        } catch (IllegalArgumentException e) {
+            String paddedSecret = jwtSecret;
+            while (paddedSecret.getBytes().length < 64) {
+                paddedSecret = paddedSecret + jwtSecret;
+            }
+            keyBytes = paddedSecret.getBytes();
+        }
+
+        if (keyBytes.length < 64) {
+            byte[] paddedKey = new byte[64];
+            System.arraycopy(keyBytes, 0, paddedKey, 0, keyBytes.length);
+            for (int i = keyBytes.length; i < 64; i++) {
+                paddedKey[i] = keyBytes[i % keyBytes.length];
+            }
+            keyBytes = paddedKey;
+        }
         return new SecretKeySpec(keyBytes, "HmacSHA512");
     }
 
@@ -44,12 +63,10 @@ public class JwtService {
     }
 
     private String buildToken(Map<String, Object> extraClaims, UserDetails userDetails, long expiration) {
-        // Extract user details regardless of UserDetails implementation
         Long userId = extractUserIdFromUserDetails(userDetails);
         String userRole = extractUserRoleFromUserDetails(userDetails);
         String email = extractEmailFromUserDetails(userDetails);
 
-        // Add business claims
         extraClaims.put("userId", userId);
         extraClaims.put("userRole", userRole);
         extraClaims.put("email", email);
@@ -58,7 +75,7 @@ public class JwtService {
                 .setClaims(extraClaims)
                 .setSubject(userDetails.getUsername())
                 .setIssuedAt(new Date(System.currentTimeMillis()))
-                .setExpiration(new Date(System.currentTimeMillis() + expiration)) // 1 day
+                .setExpiration(new Date(System.currentTimeMillis() + expiration))
                 .setIssuer("Games-API")
                 .signWith(getSigningKey(), SignatureAlgorithm.HS512)
                 .compact();
@@ -114,28 +131,16 @@ public class JwtService {
     }
 
     public boolean isRefreshToken(String token) {
-        try {
-            return "refresh".equals(extractTokenType(token));
-        } catch (JwtException | IllegalArgumentException e) {
-            return false;
-        }
+        return "refresh".equals(extractTokenType(token));
     }
 
     public boolean isTokenExpired(String token) {
-        try {
-            return extractExpiration(token).before(new Date());
-        } catch (Exception e) {
-            return true; // Consider invalid tokens as expired
-        }
+        return extractExpiration(token).before(new Date());
     }
 
     public boolean isTokenValid(String token, UserDetails userDetails) {
-        try {
-            final String username = extractUsername(token);
-            return username.equals(userDetails.getUsername()) && !isTokenExpired(token);
-        } catch (JwtException | IllegalArgumentException e) {
-            return false;
-        }
+        final String username = extractUsername(token);
+        return username.equals(userDetails.getUsername()) && !isTokenExpired(token);
     }
 
     public long getExpirationTime() {
