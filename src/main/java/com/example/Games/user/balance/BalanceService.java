@@ -28,20 +28,20 @@ public class BalanceService {
         return userContextService.getCurrentUser();
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public BalanceResponse getBalance() {
         User user = getCurrentUser();
         BigDecimal balance = getOrCreateBalance(user).getAmount();
         return balanceMapper.toBalanceResponse(balance);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public BigDecimal getRawBalance() {
         User user = getCurrentUser();
         return getOrCreateBalance(user).getAmount();
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public BalanceResponse getUserBalance(Long userId) {
         User user = userContextService.getUserById(userId);
         BigDecimal balance = getOrCreateBalance(user).getAmount();
