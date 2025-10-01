@@ -15,8 +15,4 @@ public class CartOperationException extends RuntimeException {
             String.format("Game with ID %d is not in your cart", gameId)
         );
     }
-
-    public static CartOperationException checkoutFailed(String reason) {
-        return new CartOperationException("Checkout failed: " + reason);
-    }
 }

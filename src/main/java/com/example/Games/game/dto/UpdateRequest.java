@@ -1,6 +1,7 @@
 package com.example.Games.game.dto;
 
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
@@ -11,6 +12,6 @@ public record UpdateRequest(
         
         @DecimalMin(value = "0.01", message = "Price must be at least $0.01")
         BigDecimal price,
-        
+        @NotNull
         Long categoryId
 ) {}

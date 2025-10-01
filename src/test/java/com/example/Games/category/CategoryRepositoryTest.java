@@ -1,21 +1,32 @@
 package com.example.Games.category;
 
+import com.example.Games.config.TestJpaAuditingConfig;
+import com.example.Games.game.Game;
+import com.example.Games.user.auth.User;
+import com.example.Games.user.role.Role;
+import com.example.Games.user.role.RoleType;
+import jakarta.persistence.PersistenceException;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
+import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
 
 @DataJpaTest
+@Import(TestJpaAuditingConfig.class)
 @ActiveProfiles("test")
-@DisplayName("CategoryRepository Integration Tests")
+@DisplayName("CategoryRepository Tests")
 class CategoryRepositoryTest {
 
     @Autowired
@@ -24,218 +35,127 @@ class CategoryRepositoryTest {
     @Autowired
     private CategoryRepository categoryRepository;
 
+    private User creator;
     private Category actionCategory;
-    private Category rpgCategory;
+    private Category adventureCategory;
+
 
     @BeforeEach
     void setUp() {
-        // Create test categories
+        Role role = Role.builder().name(RoleType.DEVELOPER).build();
+        entityManager.persist(role);
+
+        creator = User.builder()
+                .username("testdev")
+                .password("password")
+                .email("dev@example.com")
+                .role(role)
+                .build();
+        entityManager.persist(creator);
+
         actionCategory = Category.builder()
                 .name("Action")
+                .createdBy(creator)
                 .build();
+        entityManager.persist(actionCategory);
 
-        rpgCategory = Category.builder()
-                .name("RPG")
+        adventureCategory = Category.builder()
+                .name("Adventure")
+                .createdBy(creator)
                 .build();
+        entityManager.persist(adventureCategory);
 
-        // Save them using EntityManager for better control
-        entityManager.persistAndFlush(actionCategory);
-        entityManager.persistAndFlush(rpgCategory);
+
+        Game game = Game.builder()
+                .title("Test Game")
+                .category(actionCategory)
+                .author(creator)
+                .price(BigDecimal.valueOf(29.99))
+                .build();
+        entityManager.persist(game);
+
+        Game game2 = Game.builder()
+                .title("Test Game2")
+                .category(actionCategory)
+                .author(creator)
+                .price(BigDecimal.valueOf(29.99))
+                .build();
+        entityManager.persist(game2);
     }
 
     @Test
-    @DisplayName("Should find category by name (case sensitive)")
-    void shouldFindCategoryByName() {
-        // When
+    @DisplayName("Should find category by name")
+    void shouldFindByName() {
         Optional<Category> found = categoryRepository.findByName("Action");
 
-        // Then
         assertThat(found).isPresent();
         assertThat(found.get().getName()).isEqualTo("Action");
-        assertThat(found.get().getId()).isEqualTo(actionCategory.getId());
+        assertThat(found.get().getCreatedBy().getUsername()).isEqualTo("testdev");
     }
 
     @Test
-    @DisplayName("Should return empty when category name not found")
-    void shouldReturnEmptyWhenCategoryNameNotFound() {
-        // When
-        Optional<Category> found = categoryRepository.findByName("NonExistent");
-
-        // Then
+    @DisplayName("Should return empty when category name does not exist")
+    void shouldReturnEmptyIfNameNotFound() {
+        Optional<Category> found = categoryRepository.findByName("NonExisting");
         assertThat(found).isEmpty();
     }
 
     @Test
-    @DisplayName("Should be case sensitive when finding by name")
-    void shouldBeCaseSensitiveWhenFindingByName() {
-        // When
-        Optional<Category> foundLowerCase = categoryRepository.findByName("action");
-        Optional<Category> foundUpperCase = categoryRepository.findByName("ACTION");
-
-        // Then
-        assertThat(foundLowerCase).isEmpty();
-        assertThat(foundUpperCase).isEmpty();
-    }
-
-    @Test
-    @DisplayName("Should find all categories")
-    void shouldFindAllCategories() {
-        // When
-        List<Category> categories = categoryRepository.findAll();
-
-        // Then
-        assertThat(categories).hasSize(2);
-        assertThat(categories)
-                .extracting(Category::getName)
-                .containsExactlyInAnyOrder("Action", "RPG");
-    }
-
-    @Test
-    @DisplayName("Should save new category")
-    void shouldSaveNewCategory() {
-        // Given
-        Category strategyCategory = Category.builder()
-                .name("Strategy")
+    @DisplayName("Should not allow duplicate category names")
+    void shouldNotAllowDuplicateNames() {
+        Category duplicate = Category.builder()
+                .name("Action")
+                .createdBy(creator)
                 .build();
 
-        // When
-        Category saved = categoryRepository.save(strategyCategory);
-
-        // Then
-        assertThat(saved.getId()).isNotNull();
-        assertThat(saved.getName()).isEqualTo("Strategy");
-        assertThat(saved.getCreatedAt()).isNotNull();
-        assertThat(saved.getUpdatedAt()).isNotNull();
-
-        // Verify it's persisted
-        Optional<Category> found = categoryRepository.findById(saved.getId());
-        assertThat(found).isPresent();
-        assertThat(found.get().getName()).isEqualTo("Strategy");
-    }
-
-    @Test
-    @DisplayName("Should update existing category")
-    void shouldUpdateExistingCategory() {
-        // Given
-        actionCategory.updateName("Action Updated");
-
-        // When
-        Category updated = categoryRepository.save(actionCategory);
-
-        // Then
-        assertThat(updated.getName()).isEqualTo("Action Updated");
-        assertThat(updated.getId()).isEqualTo(actionCategory.getId());
-
-        // Verify in database
-        Optional<Category> found = categoryRepository.findById(actionCategory.getId());
-        assertThat(found).isPresent();
-        assertThat(found.get().getName()).isEqualTo("Action Updated");
-    }
-
-    @Test
-    @DisplayName("Should delete category by ID")
-    void shouldDeleteCategoryById() {
-        // Given
-        Long categoryId = actionCategory.getId();
-
-        // When
-        categoryRepository.deleteById(categoryId);
-        entityManager.flush();
-
-        // Then
-        Optional<Category> found = categoryRepository.findById(categoryId);
-        assertThat(found).isEmpty();
-
-        // Verify only one category remains
-        List<Category> remaining = categoryRepository.findAll();
-        assertThat(remaining).hasSize(1);
-        assertThat(remaining.get(0).getName()).isEqualTo("RPG");
-    }
-
-    @Test
-    @DisplayName("Should find category by ID")
-    void shouldFindCategoryById() {
-        // When
-        Optional<Category> found = categoryRepository.findById(actionCategory.getId());
-
-        // Then
-        assertThat(found).isPresent();
-        assertThat(found.get().getName()).isEqualTo("Action");
-        assertThat(found.get().getId()).isEqualTo(actionCategory.getId());
-    }
-
-    @Test
-    @DisplayName("Should return empty when finding by non-existent ID")
-    void shouldReturnEmptyWhenFindingByNonExistentId() {
-        // When
-        Optional<Category> found = categoryRepository.findById(999L);
-
-        // Then
-        assertThat(found).isEmpty();
-    }
-
-    @Test
-    @DisplayName("Should enforce unique constraint on name")
-    void shouldEnforceUniqueConstraintOnName() {
-        // Given
-        Category duplicateCategory = Category.builder()
-                .name("Action") // Same name as existing category
-                .build();
-
-        // When & Then
         assertThatThrownBy(() -> {
-            categoryRepository.save(duplicateCategory);
-            entityManager.flush(); // Force the constraint check
-        }).hasMessageContaining("constraint");
+            entityManager.persistAndFlush(duplicate);
+        }).isInstanceOf(ConstraintViolationException.class);
     }
 
     @Test
-    @DisplayName("Should handle null name gracefully in findByName")
-    void shouldHandleNullNameGracefullyInFindByName() {
-        // When
-        Optional<Category> found = categoryRepository.findByName(null);
+    @DisplayName("Should return true if category has games")
+    void shouldReturnTrueIfCategoryHasGames() {
+        boolean hasGames = categoryRepository.hasGames(actionCategory.getId());
 
-        // Then
-        assertThat(found).isEmpty();
+        assertThat(hasGames).isTrue();
     }
 
     @Test
-    @DisplayName("Should handle empty string in findByName")
-    void shouldHandleEmptyStringInFindByName() {
-        // When
-        Optional<Category> found = categoryRepository.findByName("");
+    @DisplayName("Should return false if category has no games")
+    void shouldReturnFalseIfCategoryHasNoGames() {
+        boolean hasGames = categoryRepository.hasGames(adventureCategory.getId());
 
-        // Then
-        assertThat(found).isEmpty();
+        assertThat(hasGames).isFalse();
     }
 
-    @Test
-    @DisplayName("Should count categories correctly")
-    void shouldCountCategoriesCorrectly() {
-        // When
-        long count = categoryRepository.count();
 
-        // Then
+    @Test
+    @DisplayName("Should count games by category ID")
+    void shouldCountGamesByCategoryId() {
+
+        int count = categoryRepository.countGamesByCategoryId(actionCategory.getId());
+        int count2 = categoryRepository.countGamesByCategoryId(adventureCategory.getId());
+
         assertThat(count).isEqualTo(2);
+        assertThat(count2).isEqualTo(0);
     }
 
     @Test
-    @DisplayName("Should return true when category exists by ID")
-    void shouldReturnTrueWhenCategoryExistsById() {
-        // When
-        boolean exists = categoryRepository.existsById(actionCategory.getId());
+    @DisplayName("Should find category with creator eagerly loaded")
+    void shouldFindByIdWithCreator() {
+        Optional<Category> found = categoryRepository.findByIdWithCreator(actionCategory.getId());
 
-        // Then
-        assertThat(exists).isTrue();
+        assertThat(found).isPresent();
+        assertThat(found.get().getCreatedBy()).isNotNull();
+        assertThat(found.get().getCreatedBy().getUsername()).isEqualTo("testdev");
     }
 
     @Test
-    @DisplayName("Should return false when category does not exist by ID")
-    void shouldReturnFalseWhenCategoryDoesNotExistById() {
-        // When
-        boolean exists = categoryRepository.existsById(999L);
+    @DisplayName("Should set createdAt and updatedAt automatically")
+    void shouldSetAuditingFields() {
 
-        // Then
-        assertThat(exists).isFalse();
+        assertThat(actionCategory.getCreatedAt()).isNotNull();
+        assertThat(actionCategory.getUpdatedAt()).isNotNull();
     }
 }

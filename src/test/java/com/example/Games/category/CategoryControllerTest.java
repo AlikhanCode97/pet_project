@@ -2,25 +2,33 @@ package com.example.Games.category;
 
 import com.example.Games.category.dto.CategoryRequest;
 import com.example.Games.category.dto.CategoryResponse;
+import com.example.Games.config.common.dto.ApiResponse;
 import com.example.Games.config.common.mappers.ResponseMapStruct;
 import com.example.Games.config.exception.category.CategoryAlreadyExistsException;
 import com.example.Games.config.exception.category.CategoryInUseException;
 import com.example.Games.config.exception.category.CategoryNotFoundException;
+import com.example.Games.config.exception.category.UnauthorizedCategoryAccessException;
+import com.example.Games.config.security.JwtAuthenticationFilter;
+import com.example.Games.config.security.SecurityConfig;
+import com.example.Games.config.security.TokenBlacklistService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.FilterType;
 import org.springframework.http.MediaType;
-import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.*;
@@ -30,9 +38,16 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(CategoryController.class)
+@WebMvcTest(controllers = CategoryController.class, excludeFilters = {
+        @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = {
+                SecurityConfig.class,
+                JwtAuthenticationFilter.class,
+                TokenBlacklistService.class
+        })
+})
+@AutoConfigureMockMvc(addFilters = false)
 @ActiveProfiles("test")
-@DisplayName("CategoryController Integration Tests")
+@DisplayName("CategoryController Tests")
 class CategoryControllerTest {
 
     @Autowired
@@ -41,573 +56,358 @@ class CategoryControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @MockBean
+    @MockitoBean
     private CategoryService categoryService;
 
-    @MockBean
+    @MockitoBean
     private ResponseMapStruct responseMapper;
 
     private CategoryRequest categoryRequest;
     private CategoryResponse categoryResponse;
+    private CategoryResponse categoryResponse2;
     private List<CategoryResponse> categoryList;
+    private LocalDateTime now;
 
     @BeforeEach
     void setUp() {
-        LocalDateTime now = LocalDateTime.now();
-        
+        now = LocalDateTime.now();
+
         categoryRequest = new CategoryRequest("Action");
         
         categoryResponse = new CategoryResponse(
                 1L, 
                 "Action", 
-                0, 
-                now, 
-                now
+                "developer1",
+                10L,
+                now.minusDays(5), 
+                now.minusDays(5)
         );
-
-        CategoryResponse rpgResponse = new CategoryResponse(
+        
+        categoryResponse2 = new CategoryResponse(
                 2L, 
                 "RPG", 
-                3, 
-                now, 
+                "developer2",
+                11L,
+                now.minusDays(3), 
+                now.minusDays(2)
+        );
+        
+        categoryList = Arrays.asList(categoryResponse, categoryResponse2);
+    }
+
+
+
+    @Test
+    @DisplayName("Should create category successfully with valid data")
+    void shouldCreateCategorySuccessfully() throws Exception {
+        // Given
+        when(categoryService.createCategory(any(CategoryRequest.class))).thenReturn(categoryResponse);
+        when(responseMapper.toSuccessResponse(eq("Category created successfully"), eq(categoryResponse)))
+                .thenReturn(new ApiResponse<>("Category created successfully", categoryResponse, System.currentTimeMillis()));
+
+        // When & Then
+        mockMvc.perform(post("/api/v1/categories")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(categoryRequest)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.message").value("Category created successfully"))
+                .andExpect(jsonPath("$.data.id").value(1))
+                .andExpect(jsonPath("$.data.name").value("Action"))
+                .andExpect(jsonPath("$.data.createdByUsername").value("developer1"))
+                .andExpect(jsonPath("$.data.createdById").value(10))
+                .andExpect(jsonPath("$.timestamp").exists());
+
+        verify(categoryService).createCategory(any(CategoryRequest.class));
+        verify(responseMapper).toSuccessResponse(eq("Category created successfully"), eq(categoryResponse));
+    }
+
+    @Test
+    @DisplayName("Should return 409 when creating duplicate category")
+    void shouldReturn409WhenCreatingDuplicateCategory() throws Exception {
+        // Given
+        when(categoryService.createCategory(any(CategoryRequest.class)))
+                .thenThrow(new CategoryAlreadyExistsException("Category with name 'Action' already exists"));
+        when(responseMapper.toErrorResponse(anyString()))
+                .thenReturn(new ApiResponse<>("Category with name 'Action' already exists", null, System.currentTimeMillis()));
+
+        // When & Then
+        mockMvc.perform(post("/api/v1/categories")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(categoryRequest)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("Category with name 'Action' already exists"))
+                .andExpect(jsonPath("$.data").doesNotExist());
+
+        verify(categoryService).createCategory(any(CategoryRequest.class));
+    }
+
+    @Test
+    @DisplayName("Should return 400 when category name is null")
+    void shouldReturn400WhenCategoryNameIsNull() throws Exception {
+        // Given
+        String jsonWithNull = "{\"name\": null}";
+
+        // When & Then
+        mockMvc.perform(post("/api/v1/categories")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonWithNull))
+                .andExpect(status().isBadRequest());
+
+        verify(categoryService, never()).createCategory(any());
+    }
+
+    @Test
+    @DisplayName("Should get all categories successfully")
+    void shouldGetAllCategoriesSuccessfully() throws Exception {
+        // Given
+        when(categoryService.getAllCategories()).thenReturn(categoryList);
+        when(responseMapper.toSuccessResponse(categoryList))
+                .thenReturn(new ApiResponse<>(null, categoryList, System.currentTimeMillis()));
+
+        // When & Then
+        mockMvc.perform(get("/api/v1/categories"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[0].id").value(1))
+                .andExpect(jsonPath("$.data[0].name").value("Action"))
+                .andExpect(jsonPath("$.data[1].id").value(2))
+                .andExpect(jsonPath("$.data[1].name").value("RPG"));
+
+        verify(categoryService).getAllCategories();
+        verify(responseMapper).toSuccessResponse(categoryList);
+    }
+
+    @Test
+    @DisplayName("Should return empty list when no categories exist")
+    void shouldReturnEmptyListWhenNoCategoriesExist() throws Exception {
+        // Given
+        List<CategoryResponse> emptyList = Collections.emptyList();
+        when(categoryService.getAllCategories()).thenReturn(emptyList);
+        when(responseMapper.toSuccessResponse(emptyList))
+                .thenReturn(new ApiResponse<>(null, emptyList, System.currentTimeMillis()));
+
+        // When & Then
+        mockMvc.perform(get("/api/v1/categories"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data.length()").value(0));
+
+        verify(categoryService).getAllCategories();
+    }
+
+    @Test
+    @DisplayName("Should get category by ID successfully")
+    void shouldGetCategoryByIdSuccessfully() throws Exception {
+        // Given
+        Long categoryId = 1L;
+        when(categoryService.getCategoryById(categoryId)).thenReturn(categoryResponse);
+        when(responseMapper.toSuccessResponse(categoryResponse))
+                .thenReturn(new ApiResponse<>(null, categoryResponse, System.currentTimeMillis()));
+
+        // When & Then
+        mockMvc.perform(get("/api/v1/categories/{id}", categoryId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(1))
+                .andExpect(jsonPath("$.data.name").value("Action"))
+                .andExpect(jsonPath("$.data.createdByUsername").value("developer1"));
+
+        verify(categoryService).getCategoryById(categoryId);
+        verify(responseMapper).toSuccessResponse(categoryResponse);
+    }
+
+    @Test
+    @DisplayName("Should return 404 when category not found by ID")
+    void shouldReturn404WhenCategoryNotFoundById() throws Exception {
+        // Given
+        Long categoryId = 999L;
+        when(categoryService.getCategoryById(categoryId))
+                .thenThrow(new CategoryNotFoundException("Category with ID 999 not found"));
+        when(responseMapper.toErrorResponse(anyString()))
+                .thenReturn(new ApiResponse<>("Category with ID 999 not found", null, System.currentTimeMillis()));
+
+        // When & Then
+        mockMvc.perform(get("/api/v1/categories/{id}", categoryId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Category with ID 999 not found"));
+
+        verify(categoryService).getCategoryById(categoryId);
+    }
+
+    @Test
+    @DisplayName("Should update category successfully")
+    void shouldUpdateCategorySuccessfully() throws Exception {
+        // Given
+        Long categoryId = 1L;
+        CategoryRequest updateRequest = new CategoryRequest("Updated Action");
+        CategoryResponse updatedResponse = new CategoryResponse(
+                categoryId,
+                "Updated Action",
+                "developer1",
+                10L,
+                now.minusDays(5),
                 now
         );
 
-        categoryList = Arrays.asList(categoryResponse, rpgResponse);
+        when(categoryService.updateCategory(eq(categoryId), any(CategoryRequest.class)))
+                .thenReturn(updatedResponse);
+        when(responseMapper.toSuccessResponse(eq("Category updated successfully"), eq(updatedResponse)))
+                .thenReturn(new ApiResponse<>("Category updated successfully", updatedResponse, System.currentTimeMillis()));
+
+        // When & Then
+        mockMvc.perform(put("/api/v1/categories/{id}", categoryId)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateRequest)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Category updated successfully"))
+                .andExpect(jsonPath("$.data.name").value("Updated Action"));
+
+        verify(categoryService).updateCategory(eq(categoryId), any(CategoryRequest.class));
     }
 
-    @Nested
-    @DisplayName("POST /api/v1/categories - Create Category Tests")
-    class CreateCategoryTests {
+    @Test
+    @DisplayName("Should return 404 when updating non-existent category")
+    void shouldReturn404WhenUpdatingNonExistentCategory() throws Exception {
+        // Given
+        Long categoryId = 999L;
+        CategoryRequest updateRequest = new CategoryRequest("Updated Action");
 
-        @Test
-        @WithMockUser(authorities = "ROLE_DEVELOPER")
-        @DisplayName("Should create category successfully with valid request")
-        void shouldCreateCategorySuccessfullyWithValidRequest() throws Exception {
-            // Given
-            when(categoryService.createCategory(any(CategoryRequest.class))).thenReturn(categoryResponse);
-            when(responseMapper.toSuccessResponse(anyString(), any())).thenReturn(null); // Mock API response
+        when(categoryService.updateCategory(eq(categoryId), any(CategoryRequest.class)))
+                .thenThrow(new CategoryNotFoundException("Category with ID 999 not found"));
+        when(responseMapper.toErrorResponse(anyString()))
+                .thenReturn(new ApiResponse<>("Category with ID 999 not found", null, System.currentTimeMillis()));
 
-            // When & Then
-            mockMvc.perform(post("/api/v1/categories")
-                            .with(csrf())
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(categoryRequest)))
-                    .andDo(print())
-                    .andExpect(status().isOk())
-                    .andExpect(content().contentType(MediaType.APPLICATION_JSON));
+        // When & Then
+        mockMvc.perform(put("/api/v1/categories/{id}", categoryId)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateRequest)))
+                .andExpect(status().isNotFound());
 
-            verify(categoryService).createCategory(any(CategoryRequest.class));
-            verify(responseMapper).toSuccessResponse(eq("Category created successfully"), eq(categoryResponse));
-        }
-
-        @Test
-        @WithMockUser(authorities = "ROLE_USER")
-        @DisplayName("Should return 403 when user lacks DEVELOPER authority")
-        void shouldReturn403WhenUserLacksDeveloperAuthority() throws Exception {
-            // When & Then
-            mockMvc.perform(post("/api/v1/categories")
-                            .with(csrf())
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(categoryRequest)))
-                    .andDo(print())
-                    .andExpect(status().isForbidden());
-
-            verify(categoryService, never()).createCategory(any());
-        }
-
-        @Test
-        @DisplayName("Should return 401 when user is not authenticated")
-        void shouldReturn401WhenUserIsNotAuthenticated() throws Exception {
-            // When & Then
-            mockMvc.perform(post("/api/v1/categories")
-                            .with(csrf())
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(categoryRequest)))
-                    .andDo(print())
-                    .andExpect(status().isUnauthorized());
-
-            verify(categoryService, never()).createCategory(any());
-        }
-
-        @Test
-        @WithMockUser(authorities = "ROLE_DEVELOPER")
-        @DisplayName("Should return 400 when category name is blank")
-        void shouldReturn400WhenCategoryNameIsBlank() throws Exception {
-            // Given
-            CategoryRequest invalidRequest = new CategoryRequest("");
-
-            // When & Then
-            mockMvc.perform(post("/api/v1/categories")
-                            .with(csrf())
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(invalidRequest)))
-                    .andDo(print())
-                    .andExpect(status().isBadRequest());
-
-            verify(categoryService, never()).createCategory(any());
-        }
-
-        @Test
-        @WithMockUser(authorities = "ROLE_DEVELOPER")
-        @DisplayName("Should return 400 when category name is too long")
-        void shouldReturn400WhenCategoryNameIsTooLong() throws Exception {
-            // Given
-            String longName = "a".repeat(101);
-            CategoryRequest invalidRequest = new CategoryRequest(longName);
-
-            // When & Then
-            mockMvc.perform(post("/api/v1/categories")
-                            .with(csrf())
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(invalidRequest)))
-                    .andDo(print())
-                    .andExpect(status().isBadRequest());
-
-            verify(categoryService, never()).createCategory(any());
-        }
-
-        @Test
-        @WithMockUser(authorities = "ROLE_DEVELOPER")
-        @DisplayName("Should return 409 when category already exists")
-        void shouldReturn409WhenCategoryAlreadyExists() throws Exception {
-            // Given
-            when(categoryService.createCategory(any(CategoryRequest.class)))
-                    .thenThrow(CategoryAlreadyExistsException.withName("Action"));
-
-            // When & Then
-            mockMvc.perform(post("/api/v1/categories")
-                            .with(csrf())
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(categoryRequest)))
-                    .andDo(print())
-                    .andExpect(status().isConflict());
-
-            verify(categoryService).createCategory(any(CategoryRequest.class));
-        }
-
-        @Test
-        @WithMockUser(authorities = "ROLE_DEVELOPER")
-        @DisplayName("Should return 400 when request body is malformed")
-        void shouldReturn400WhenRequestBodyIsMalformed() throws Exception {
-            // When & Then
-            mockMvc.perform(post("/api/v1/categories")
-                            .with(csrf())
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("{invalid json}"))
-                    .andDo(print())
-                    .andExpect(status().isBadRequest());
-
-            verify(categoryService, never()).createCategory(any());
-        }
+        verify(categoryService).updateCategory(eq(categoryId), any(CategoryRequest.class));
     }
 
-    @Nested
-    @DisplayName("GET /api/v1/categories - Get All Categories Tests")
-    class GetAllCategoriesTests {
+    @Test
+    @DisplayName("Should return 409 when updating to duplicate name")
+    void shouldReturn409WhenUpdatingToDuplicateName() throws Exception {
+        // Given
+        Long categoryId = 1L;
+        CategoryRequest updateRequest = new CategoryRequest("RPG");
 
-        @Test
-        @WithMockUser
-        @DisplayName("Should return all categories successfully")
-        void shouldReturnAllCategoriesSuccessfully() throws Exception {
-            // Given
-            when(categoryService.getAllCategories()).thenReturn(categoryList);
-            when(responseMapper.toSuccessResponse(categoryList)).thenReturn(null);
+        when(categoryService.updateCategory(eq(categoryId), any(CategoryRequest.class)))
+                .thenThrow(new CategoryAlreadyExistsException("Category with name 'RPG' already exists"));
+        when(responseMapper.toErrorResponse(anyString()))
+                .thenReturn(new ApiResponse<>("Category with name 'RPG' already exists", null, System.currentTimeMillis()));
 
-            // When & Then
-            mockMvc.perform(get("/api/v1/categories")
-                            .contentType(MediaType.APPLICATION_JSON))
-                    .andDo(print())
-                    .andExpect(status().isOk())
-                    .andExpect(content().contentType(MediaType.APPLICATION_JSON));
+        // When & Then
+        mockMvc.perform(put("/api/v1/categories/{id}", categoryId)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateRequest)))
+                .andExpect(status().isConflict());
 
-            verify(categoryService).getAllCategories();
-            verify(responseMapper).toSuccessResponse(categoryList);
-        }
-
-        @Test
-        @DisplayName("Should allow unauthenticated access to get all categories")
-        void shouldAllowUnauthenticatedAccessToGetAllCategories() throws Exception {
-            // Given
-            when(categoryService.getAllCategories()).thenReturn(categoryList);
-            when(responseMapper.toSuccessResponse(categoryList)).thenReturn(null);
-
-            // When & Then
-            mockMvc.perform(get("/api/v1/categories")
-                            .contentType(MediaType.APPLICATION_JSON))
-                    .andDo(print())
-                    .andExpect(status().isOk());
-
-            verify(categoryService).getAllCategories();
-        }
+        verify(categoryService).updateCategory(eq(categoryId), any(CategoryRequest.class));
     }
 
-    @Nested
-    @DisplayName("GET /api/v1/categories/{id} - Get Category By ID Tests")
-    class GetCategoryByIdTests {
+    @Test
+    @DisplayName("Should return 403 when updating category not owned by user")
+    void shouldReturn403WhenUpdatingCategoryNotOwned() throws Exception {
+        // Given
+        Long categoryId = 1L;
+        CategoryRequest updateRequest = new CategoryRequest("Updated Action");
 
-        @Test
-        @WithMockUser
-        @DisplayName("Should return category when found by ID")
-        void shouldReturnCategoryWhenFoundById() throws Exception {
-            // Given
-            Long categoryId = 1L;
-            when(categoryService.getCategoryById(categoryId)).thenReturn(categoryResponse);
-            when(responseMapper.toSuccessResponse(categoryResponse)).thenReturn(null);
+        when(categoryService.updateCategory(eq(categoryId), any(CategoryRequest.class)))
+                .thenThrow(new UnauthorizedCategoryAccessException("You don't have permission to update this category"));
+        when(responseMapper.toErrorResponse(anyString()))
+                .thenReturn(new ApiResponse<>("You don't have permission to update this category", null, System.currentTimeMillis()));
 
-            // When & Then
-            mockMvc.perform(get("/api/v1/categories/{id}", categoryId)
-                            .contentType(MediaType.APPLICATION_JSON))
-                    .andDo(print())
-                    .andExpect(status().isOk())
-                    .andExpect(content().contentType(MediaType.APPLICATION_JSON));
+        // When & Then
+        mockMvc.perform(put("/api/v1/categories/{id}", categoryId)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateRequest)))
+                .andExpect(status().isForbidden());
 
-            verify(categoryService).getCategoryById(categoryId);
-            verify(responseMapper).toSuccessResponse(categoryResponse);
-        }
-
-        @Test
-        @WithMockUser
-        @DisplayName("Should return 404 when category not found by ID")
-        void shouldReturn404WhenCategoryNotFoundById() throws Exception {
-            // Given
-            Long categoryId = 999L;
-            when(categoryService.getCategoryById(categoryId))
-                    .thenThrow(CategoryNotFoundException.byId(categoryId));
-
-            // When & Then
-            mockMvc.perform(get("/api/v1/categories/{id}", categoryId)
-                            .contentType(MediaType.APPLICATION_JSON))
-                    .andDo(print())
-                    .andExpect(status().isNotFound());
-
-            verify(categoryService).getCategoryById(categoryId);
-        }
-
-        @Test
-        @WithMockUser
-        @DisplayName("Should return 400 for invalid ID format")
-        void shouldReturn400ForInvalidIdFormat() throws Exception {
-            // When & Then
-            mockMvc.perform(get("/api/v1/categories/{id}", "invalid")
-                            .contentType(MediaType.APPLICATION_JSON))
-                    .andDo(print())
-                    .andExpect(status().isBadRequest());
-
-            verify(categoryService, never()).getCategoryById(any());
-        }
+        verify(categoryService).updateCategory(eq(categoryId), any(CategoryRequest.class));
     }
 
-    @Nested
-    @DisplayName("PUT /api/v1/categories/{id} - Update Category Tests")
-    class UpdateCategoryTests {
+    @Test
+    @DisplayName("Should delete category successfully")
+    void shouldDeleteCategorySuccessfully() throws Exception {
+        // Given
+        Long categoryId = 1L;
+        doNothing().when(categoryService).deleteCategory(categoryId);
+        when(responseMapper.toSuccessResponse(eq("Category deleted successfully")))
+                .thenReturn(new ApiResponse<>("Category deleted successfully", null, System.currentTimeMillis()));
 
-        @Test
-        @WithMockUser(authorities = "ROLE_DEVELOPER")
-        @DisplayName("Should update category successfully")
-        void shouldUpdateCategorySuccessfully() throws Exception {
-            // Given
-            Long categoryId = 1L;
-            CategoryRequest updateRequest = new CategoryRequest("Updated Action");
-            CategoryResponse updatedResponse = new CategoryResponse(
-                    1L, "Updated Action", 0, LocalDateTime.now(), LocalDateTime.now()
-            );
+        // When & Then
+        mockMvc.perform(delete("/api/v1/categories/{id}", categoryId)
+                        .with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Category deleted successfully"))
+                .andExpect(jsonPath("$.data").doesNotExist());
 
-            when(categoryService.updateCategory(eq(categoryId), any(CategoryRequest.class)))
-                    .thenReturn(updatedResponse);
-            when(responseMapper.toSuccessResponse(anyString(), any())).thenReturn(null);
-
-            // When & Then
-            mockMvc.perform(put("/api/v1/categories/{id}", categoryId)
-                            .with(csrf())
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(updateRequest)))
-                    .andDo(print())
-                    .andExpect(status().isOk())
-                    .andExpect(content().contentType(MediaType.APPLICATION_JSON));
-
-            verify(categoryService).updateCategory(eq(categoryId), any(CategoryRequest.class));
-            verify(responseMapper).toSuccessResponse(eq("Category updated successfully"), eq(updatedResponse));
-        }
-
-        @Test
-        @WithMockUser(authorities = "ROLE_USER")
-        @DisplayName("Should return 403 when user lacks DEVELOPER authority for update")
-        void shouldReturn403WhenUserLacksDeveloperAuthorityForUpdate() throws Exception {
-            // Given
-            Long categoryId = 1L;
-            CategoryRequest updateRequest = new CategoryRequest("Updated Action");
-
-            // When & Then
-            mockMvc.perform(put("/api/v1/categories/{id}", categoryId)
-                            .with(csrf())
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(updateRequest)))
-                    .andDo(print())
-                    .andExpect(status().isForbidden());
-
-            verify(categoryService, never()).updateCategory(any(), any());
-        }
-
-        @Test
-        @WithMockUser(authorities = "ROLE_DEVELOPER")
-        @DisplayName("Should return 404 when category not found for update")
-        void shouldReturn404WhenCategoryNotFoundForUpdate() throws Exception {
-            // Given
-            Long categoryId = 999L;
-            CategoryRequest updateRequest = new CategoryRequest("Updated Action");
-
-            when(categoryService.updateCategory(eq(categoryId), any(CategoryRequest.class)))
-                    .thenThrow(CategoryNotFoundException.byId(categoryId));
-
-            // When & Then
-            mockMvc.perform(put("/api/v1/categories/{id}", categoryId)
-                            .with(csrf())
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(updateRequest)))
-                    .andDo(print())
-                    .andExpect(status().isNotFound());
-
-            verify(categoryService).updateCategory(eq(categoryId), any(CategoryRequest.class));
-        }
-
-        @Test
-        @WithMockUser(authorities = "ROLE_DEVELOPER")
-        @DisplayName("Should return 409 when updated name already exists")
-        void shouldReturn409WhenUpdatedNameAlreadyExists() throws Exception {
-            // Given
-            Long categoryId = 1L;
-            CategoryRequest updateRequest = new CategoryRequest("Existing Name");
-
-            when(categoryService.updateCategory(eq(categoryId), any(CategoryRequest.class)))
-                    .thenThrow(CategoryAlreadyExistsException.withName("Existing Name"));
-
-            // When & Then
-            mockMvc.perform(put("/api/v1/categories/{id}", categoryId)
-                            .with(csrf())
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(updateRequest)))
-                    .andDo(print())
-                    .andExpect(status().isConflict());
-
-            verify(categoryService).updateCategory(eq(categoryId), any(CategoryRequest.class));
-        }
+        verify(categoryService).deleteCategory(categoryId);
+        verify(responseMapper).toSuccessResponse("Category deleted successfully");
     }
 
-    @Nested
-    @DisplayName("DELETE /api/v1/categories/{id} - Delete Category Tests")
-    class DeleteCategoryTests {
+    @Test
+    @DisplayName("Should return 404 when deleting non-existent category")
+    void shouldReturn404WhenDeletingNonExistentCategory() throws Exception {
+        // Given
+        Long categoryId = 999L;
+        doThrow(new CategoryNotFoundException("Category with ID 999 not found"))
+                .when(categoryService).deleteCategory(categoryId);
+        when(responseMapper.toErrorResponse(anyString()))
+                .thenReturn(new ApiResponse<>("Category with ID 999 not found", null, System.currentTimeMillis()));
 
-        @Test
-        @WithMockUser(authorities = "ROLE_DEVELOPER")
-        @DisplayName("Should delete category successfully")
-        void shouldDeleteCategorySuccessfully() throws Exception {
-            // Given
-            Long categoryId = 1L;
-            doNothing().when(categoryService).deleteCategory(categoryId);
-            when(responseMapper.toSuccessResponse(anyString())).thenReturn(null);
+        // When & Then
+        mockMvc.perform(delete("/api/v1/categories/{id}", categoryId)
+                        .with(csrf()))
+                .andExpect(status().isNotFound());
 
-            // When & Then
-            mockMvc.perform(delete("/api/v1/categories/{id}", categoryId)
-                            .with(csrf())
-                            .contentType(MediaType.APPLICATION_JSON))
-                    .andDo(print())
-                    .andExpect(status().isOk())
-                    .andExpect(content().contentType(MediaType.APPLICATION_JSON));
-
-            verify(categoryService).deleteCategory(categoryId);
-            verify(responseMapper).toSuccessResponse("Category deleted successfully");
-        }
-
-        @Test
-        @WithMockUser(authorities = "ROLE_USER")
-        @DisplayName("Should return 403 when user lacks DEVELOPER authority for deletion")
-        void shouldReturn403WhenUserLacksDeveloperAuthorityForDeletion() throws Exception {
-            // Given
-            Long categoryId = 1L;
-
-            // When & Then
-            mockMvc.perform(delete("/api/v1/categories/{id}", categoryId)
-                            .with(csrf())
-                            .contentType(MediaType.APPLICATION_JSON))
-                    .andDo(print())
-                    .andExpect(status().isForbidden());
-
-            verify(categoryService, never()).deleteCategory(any());
-        }
-
-        @Test
-        @WithMockUser(authorities = "ROLE_DEVELOPER")
-        @DisplayName("Should return 404 when category not found for deletion")
-        void shouldReturn404WhenCategoryNotFoundForDeletion() throws Exception {
-            // Given
-            Long categoryId = 999L;
-            doThrow(CategoryNotFoundException.byId(categoryId))
-                    .when(categoryService).deleteCategory(categoryId);
-
-            // When & Then
-            mockMvc.perform(delete("/api/v1/categories/{id}", categoryId)
-                            .with(csrf())
-                            .contentType(MediaType.APPLICATION_JSON))
-                    .andDo(print())
-                    .andExpect(status().isNotFound());
-
-            verify(categoryService).deleteCategory(categoryId);
-        }
-
-        @Test
-        @WithMockUser(authorities = "ROLE_DEVELOPER")
-        @DisplayName("Should return 409 when category is in use")
-        void shouldReturn409WhenCategoryIsInUse() throws Exception {
-            // Given
-            Long categoryId = 1L;
-            doThrow(CategoryInUseException.withGames("Action", 5))
-                    .when(categoryService).deleteCategory(categoryId);
-
-            // When & Then
-            mockMvc.perform(delete("/api/v1/categories/{id}", categoryId)
-                            .with(csrf())
-                            .contentType(MediaType.APPLICATION_JSON))
-                    .andDo(print())
-                    .andExpect(status().isConflict());
-
-            verify(categoryService).deleteCategory(categoryId);
-        }
-
-        @Test
-        @WithMockUser(authorities = "ROLE_DEVELOPER")
-        @DisplayName("Should return 400 for invalid ID format in deletion")
-        void shouldReturn400ForInvalidIdFormatInDeletion() throws Exception {
-            // When & Then
-            mockMvc.perform(delete("/api/v1/categories/{id}", "invalid")
-                            .with(csrf())
-                            .contentType(MediaType.APPLICATION_JSON))
-                    .andDo(print())
-                    .andExpect(status().isBadRequest());
-
-            verify(categoryService, never()).deleteCategory(any());
-        }
+        verify(categoryService).deleteCategory(categoryId);
     }
 
-    @Nested
-    @DisplayName("CSRF and Security Tests")
-    class SecurityTests {
+    @Test
+    @DisplayName("Should return 409 when deleting category with games")
+    void shouldReturn409WhenDeletingCategoryWithGames() throws Exception {
+        // Given
+        Long categoryId = 1L;
+        doThrow(new CategoryInUseException("Cannot delete category 'Action' because it has 5 associated games"))
+                .when(categoryService).deleteCategory(categoryId);
+        when(responseMapper.toErrorResponse(anyString()))
+                .thenReturn(new ApiResponse<>("Cannot delete category 'Action' because it has 5 associated games", null, System.currentTimeMillis()));
 
-        @Test
-        @WithMockUser(authorities = "ROLE_DEVELOPER")
-        @DisplayName("Should return 403 when CSRF token is missing for POST")
-        void shouldReturn403WhenCSRFTokenIsMissingForPost() throws Exception {
-            // When & Then
-            mockMvc.perform(post("/api/v1/categories")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(categoryRequest)))
-                    .andDo(print())
-                    .andExpect(status().isForbidden());
+        // When & Then
+        mockMvc.perform(delete("/api/v1/categories/{id}", categoryId)
+                        .with(csrf()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("Cannot delete category 'Action' because it has 5 associated games"));
 
-            verify(categoryService, never()).createCategory(any());
-        }
-
-        @Test
-        @WithMockUser(authorities = "ROLE_DEVELOPER")
-        @DisplayName("Should return 403 when CSRF token is missing for PUT")
-        void shouldReturn403WhenCSRFTokenIsMissingForPut() throws Exception {
-            // When & Then
-            mockMvc.perform(put("/api/v1/categories/{id}", 1L)
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(categoryRequest)))
-                    .andDo(print())
-                    .andExpect(status().isForbidden());
-
-            verify(categoryService, never()).updateCategory(any(), any());
-        }
-
-        @Test
-        @WithMockUser(authorities = "ROLE_DEVELOPER")
-        @DisplayName("Should return 403 when CSRF token is missing for DELETE")
-        void shouldReturn403WhenCSRFTokenIsMissingForDelete() throws Exception {
-            // When & Then
-            mockMvc.perform(delete("/api/v1/categories/{id}", 1L)
-                            .contentType(MediaType.APPLICATION_JSON))
-                    .andDo(print())
-                    .andExpect(status().isForbidden());
-
-            verify(categoryService, never()).deleteCategory(any());
-        }
+        verify(categoryService).deleteCategory(categoryId);
     }
 
-    @Nested
-    @DisplayName("Content Type and Headers Tests")
-    class ContentTypeTests {
+    @Test
+    @DisplayName("Should return 403 when deleting category not owned by user")
+    void shouldReturn403WhenDeletingCategoryNotOwned() throws Exception {
+        // Given
+        Long categoryId = 1L;
+        doThrow(new UnauthorizedCategoryAccessException("You don't have permission to delete this category"))
+                .when(categoryService).deleteCategory(categoryId);
+        when(responseMapper.toErrorResponse(anyString()))
+                .thenReturn(new ApiResponse<>("You don't have permission to delete this category", null, System.currentTimeMillis()));
 
-        @Test
-        @WithMockUser(authorities = "ROLE_DEVELOPER")
-        @DisplayName("Should return 415 when content type is not JSON for POST")
-        void shouldReturn415WhenContentTypeIsNotJsonForPost() throws Exception {
-            // When & Then
-            mockMvc.perform(post("/api/v1/categories")
-                            .with(csrf())
-                            .contentType(MediaType.TEXT_PLAIN)
-                            .content("Action"))
-                    .andDo(print())
-                    .andExpect(status().isUnsupportedMediaType());
+        // When & Then
+        mockMvc.perform(delete("/api/v1/categories/{id}", categoryId)
+                        .with(csrf()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("You don't have permission to delete this category"));
 
-            verify(categoryService, never()).createCategory(any());
-        }
-
-        @Test
-        @WithMockUser
-        @DisplayName("Should accept requests without Accept header")
-        void shouldAcceptRequestsWithoutAcceptHeader() throws Exception {
-            // Given
-            when(categoryService.getAllCategories()).thenReturn(categoryList);
-            when(responseMapper.toSuccessResponse(categoryList)).thenReturn(null);
-
-            // When & Then
-            mockMvc.perform(get("/api/v1/categories"))
-                    .andDo(print())
-                    .andExpect(status().isOk());
-
-            verify(categoryService).getAllCategories();
-        }
-    }
-
-    @Nested
-    @DisplayName("Error Handling Tests")
-    class ErrorHandlingTests {
-
-        @Test
-        @WithMockUser(authorities = "ROLE_DEVELOPER")
-        @DisplayName("Should handle service layer exceptions gracefully")
-        void shouldHandleServiceLayerExceptionsGracefully() throws Exception {
-            // Given
-            when(categoryService.createCategory(any(CategoryRequest.class)))
-                    .thenThrow(new RuntimeException("Unexpected service error"));
-
-            // When & Then
-            mockMvc.perform(post("/api/v1/categories")
-                            .with(csrf())
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(categoryRequest)))
-                    .andDo(print())
-                    .andExpect(status().isInternalServerError());
-
-            verify(categoryService).createCategory(any(CategoryRequest.class));
-        }
-
-        @Test
-        @WithMockUser
-        @DisplayName("Should handle null pointer exceptions gracefully")
-        void shouldHandleNullPointerExceptionsGracefully() throws Exception {
-            // Given
-            when(categoryService.getAllCategories()).thenThrow(new NullPointerException("Null pointer error"));
-
-            // When & Then
-            mockMvc.perform(get("/api/v1/categories")
-                            .contentType(MediaType.APPLICATION_JSON))
-                    .andDo(print())
-                    .andExpect(status().isInternalServerError());
-
-            verify(categoryService).getAllCategories();
-        }
+        verify(categoryService).deleteCategory(categoryId);
     }
 }

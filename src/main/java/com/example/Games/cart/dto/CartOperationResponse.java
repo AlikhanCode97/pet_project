@@ -2,10 +2,6 @@ package com.example.Games.cart.dto;
 
 import java.math.BigDecimal;
 
-/**
- * Response DTO for cart operations success
- * Enhanced to support checkout with purchase details
- */
 public record CartOperationResponse(
         String operation,
         String message,
@@ -39,19 +35,6 @@ public record CartOperationResponse(
                 gameId,
                 gameTitle,
                 cartSize
-        );
-    }
-
-    public static CartOperationResponse checkedOut(int itemsProcessed) {
-        return new CartOperationResponse(
-                "CHECKOUT",
-                String.format("Checkout completed successfully. %d games added to your library.", itemsProcessed),
-                null,
-                null,
-                0, // Cart is empty after checkout
-                itemsProcessed,
-                null,
-                null
         );
     }
 

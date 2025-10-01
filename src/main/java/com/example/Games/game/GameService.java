@@ -2,9 +2,10 @@ package com.example.Games.game;
 
 import com.example.Games.category.Category;
 import com.example.Games.category.CategoryRepository;
-import com.example.Games.config.common.service.validation.ValidationService;
-import com.example.Games.config.exception.ResourceNotFoundException;
 import com.example.Games.config.exception.game.GameNotFoundException;
+import com.example.Games.config.exception.game.GameTitleAlreadyExistsException;
+import com.example.Games.config.exception.game.UnauthorizedGameAccessException;
+import com.example.Games.config.exception.category.CategoryNotFoundException;
 import com.example.Games.config.common.service.UserContextService;
 import com.example.Games.game.dto.CreateRequest;
 import com.example.Games.game.dto.PagedResponse;
@@ -35,23 +36,25 @@ public class GameService {
     private final GameMapStruct gameMapStruct;
     private final GameHistoryService historyService;
     private final UserContextService userContextService;
-    private final ValidationService validationService;
 
     private User getCurrentUser() {
-        return userContextService.getCurrentUser();
+        return userContextService.getAuthorizedUser();
     }
 
     @Transactional
     public Response createGame(CreateRequest request) {
         User currentUser = getCurrentUser();
-        
+
+        if (gameRepository.findByTitle(request.title()).isPresent()) {
+            throw GameTitleAlreadyExistsException.withTitle(request.title());
+        }
         Category category = categoryRepository.findById(request.categoryId())
-                .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
+                .orElseThrow(() -> CategoryNotFoundException.byId(request.categoryId()));
 
         Game game = gameMapStruct.toEntity(request, category, currentUser);
         Game savedGame = gameRepository.save(game);
 
-        historyService.recordGameCreation(savedGame);
+        historyService.recordGameCreation(savedGame , currentUser);
 
         log.info("Game '{}' created by user '{}'", savedGame.getTitle(), currentUser.getUsername());
         
@@ -60,27 +63,30 @@ public class GameService {
 
     @Transactional
     public Response updateGame(Long id, UpdateRequest request) {
-        validationService.validateGameId(id);
-        
-        Game game = gameRepository.findById(id)
-                .orElseThrow(() -> GameNotFoundException.byId(id));
-
         User currentUser = getCurrentUser();
 
+        Game game = gameRepository.findByIdWithAuthor(id)
+                .orElseThrow(() -> GameNotFoundException.byId(id));
+
         if (!game.getAuthor().getId().equals(currentUser.getId())) {
-            throw new IllegalStateException("You can only update your own games");
+            throw UnauthorizedGameAccessException.notOwner(game.getId(), currentUser.getUsername());
         }
 
         List<FieldChange> changes = new ArrayList<>();
 
         if (request.title() != null) {
             String oldTitle = game.getTitle();
+            gameRepository.findByTitle(request.title())
+                    .ifPresent(existing -> {
+                        if (!existing.getId().equals(id)) {
+                            throw GameTitleAlreadyExistsException.withTitle(request.title());
+                        }
+                    });
             game.updateTitle(request.title());
             changes.add(FieldChange.of("title", oldTitle, request.title()));
         }
         
         if (request.price() != null) {
-            validationService.validateAmount(request.price());
             BigDecimal oldPrice = game.getPrice();
             game.updatePrice(request.price());
             changes.add(FieldChange.of("price", oldPrice.toString(), request.price().toString()));
@@ -88,18 +94,18 @@ public class GameService {
         
         if (request.categoryId() != null) {
             Category category = categoryRepository.findById(request.categoryId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
-            Long oldCategoryId = game.getCategory().getId();
+                    .orElseThrow(() -> CategoryNotFoundException.byId(request.categoryId()));
+            Long oldCategoryId = gameRepository.findCategoryIdByGameId(id)
+                    .orElse(null);
             game.updateCategory(category);
-            changes.add(FieldChange.of("category", oldCategoryId.toString(), category.getId().toString()));
+            if (oldCategoryId != null) {
+                changes.add(FieldChange.of("category", oldCategoryId.toString(), category.getId().toString()));
+            }
         }
 
         Game updatedGame = gameRepository.save(game);
-
-        historyService.recordGameUpdates(updatedGame, changes);
-        
+        historyService.recordGameUpdates(updatedGame, changes, currentUser);
         log.info("Game '{}' updated by user '{}'", updatedGame.getTitle(), currentUser.getUsername());
-        
         return gameMapStruct.toDto(updatedGame);
     }
 
@@ -113,8 +119,6 @@ public class GameService {
 
     @Transactional(readOnly = true)
     public Response getGameById(Long id) {
-        validationService.validateGameId(id);
-        
         Game game = gameRepository.findById(id)
                 .orElseThrow(() -> GameNotFoundException.byId(id));
         return gameMapStruct.toDto(game);
@@ -122,7 +126,6 @@ public class GameService {
 
     @Transactional(readOnly = true)
     public Response getGameByTitle(String title) {
-        validationService.validateTitle(title);
         
         Game game = gameRepository.findByTitle(title)
                 .orElseThrow(() -> GameNotFoundException.byTitle(title));
@@ -131,25 +134,23 @@ public class GameService {
 
     @Transactional
     public void deleteGame(Long id) {
-        validationService.validateGameId(id);
-        
-        Game game = gameRepository.findById(id)
+
+        Game game = gameRepository.findByIdWithAuthor(id)
                 .orElseThrow(() -> GameNotFoundException.byId(id));
         
         User currentUser = getCurrentUser();
 
         if (!game.getAuthor().getId().equals(currentUser.getId())) {
-            throw new IllegalStateException("You can only delete your own games");
+            throw UnauthorizedGameAccessException.notOwner(game.getId(), currentUser.getUsername());
         }
         
-        historyService.recordGameDeletion(game);
+        historyService.recordGameDeletion(game, currentUser);
         gameRepository.deleteById(id);
         log.info("Game with ID {} deleted by user '{}'", id, currentUser.getUsername());
     }
 
     @Transactional(readOnly = true)
     public List<Response> searchByTitle(String title) {
-        validationService.validateTitle(title);
         
         return gameRepository.findByTitleContainingIgnoreCase(title)
                 .stream()
@@ -159,7 +160,6 @@ public class GameService {
 
     @Transactional(readOnly = true)
     public List<Response> searchGamesByAuthor(String author) {
-        validationService.validateUsername(author);
         
         return gameRepository.findByAuthor_Username(author)
                 .stream()
@@ -169,13 +169,6 @@ public class GameService {
 
     @Transactional(readOnly = true)
     public List<Response> getGamesInPriceRange(BigDecimal minPrice, BigDecimal maxPrice) {
-        validationService.validateAmount(minPrice);
-        validationService.validateAmount(maxPrice);
-        
-        if (minPrice.compareTo(maxPrice) > 0) {
-            throw new IllegalArgumentException("Minimum price cannot be greater than maximum price");
-        }
-        
         return gameRepository.findGamesInPriceRange(minPrice, maxPrice)
                 .stream()
                 .map(gameMapStruct::toDto)
@@ -195,8 +188,6 @@ public class GameService {
 
     @Transactional(readOnly = true)
     public PagedResponse getGamesByCategoryPaged(Long categoryId, int page, int size) {
-        validationService.validateId(categoryId, "Category ID");
-        validationService.validatePagination(page, size);
         
         Pageable pageable = PageRequest.of(page, size, Sort.by("title"));
         Page<Game> gamesPage = gameRepository.findByCategoryId(categoryId, pageable);
@@ -213,14 +204,5 @@ public class GameService {
                 gamesPage.getTotalElements(),
                 gamesPage.getTotalPages()
         );
-    }
-
-    @Transactional(readOnly = true)
-    public List<Response> getMyGames() {
-        User currentUser = getCurrentUser();
-        return gameRepository.findByAuthor(currentUser)
-                .stream()
-                .map(gameMapStruct::toDto)
-                .toList();
     }
 }

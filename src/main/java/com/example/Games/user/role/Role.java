@@ -13,11 +13,11 @@ import lombok.*;
 public class Role {
 
     @Id
+    @EqualsAndHashCode.Include
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Enumerated(EnumType.STRING)
     @Column(unique = true, nullable = false)
-    @EqualsAndHashCode.Include
     private RoleType name;
 }

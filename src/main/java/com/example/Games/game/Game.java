@@ -2,6 +2,7 @@ package com.example.Games.game;
 
 import com.example.Games.category.Category;
 import com.example.Games.user.auth.User;
+import com.example.Games.config.exception.game.InvalidGameDataException;
 import jakarta.persistence.*;
 import lombok.*;
 import org.springframework.data.annotation.CreatedDate;
@@ -29,7 +30,7 @@ public class Game {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
+    @Column(nullable = false, unique = true)
     private String title;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -40,7 +41,7 @@ public class Game {
     private BigDecimal price;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "category_id")
+    @JoinColumn(name = "category_id", nullable = false)
     private Category category;
 
     @CreatedDate
@@ -59,30 +60,22 @@ public class Game {
 
     public void updateTitle(String title) {
         if (title == null || title.trim().isEmpty()) {
-            throw new IllegalArgumentException("Title cannot be null or empty");
+            throw InvalidGameDataException.invalidTitle();
         }
         this.title = title.trim();
     }
 
     private void validatePositiveAmount(BigDecimal amount) {
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Price amount must be positive");
+            throw InvalidGameDataException.invalidPrice();
         }
     }
 
     public void updateCategory(Category category) {
         if (category == null) {
-            throw new IllegalArgumentException("Category cannot be null");
+            throw InvalidGameDataException.invalidCategory();
         }
         this.category = category;
-    }
-
-    @PrePersist
-    @PreUpdate
-    public void ensureProperPriceScaling() {
-        if (this.price != null) {
-            this.price = this.price.setScale(2, RoundingMode.HALF_UP);
-        }
     }
 }
 

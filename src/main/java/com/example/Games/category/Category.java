@@ -1,6 +1,7 @@
 package com.example.Games.category;
 
 import com.example.Games.game.Game;
+import com.example.Games.user.auth.User;
 import jakarta.persistence.*;
 import lombok.*;
 import org.springframework.data.annotation.CreatedDate;
@@ -30,6 +31,10 @@ public class Category {
     @Column(nullable = false, unique = true, length = 100)
     private String name;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by_id", nullable = false)
+    private User createdBy;
+
     @OneToMany(mappedBy = "category", fetch = FetchType.LAZY)
     @Builder.Default
     private List<Game> games = new ArrayList<>();
@@ -51,16 +56,7 @@ public class Category {
         }
         this.name = name.trim();
     }
-
-    public boolean hasGames() {
-        return games != null && !games.isEmpty();
-    }
-
     public int getGameCount() {
         return games != null ? games.size() : 0;
-    }
-
-    public boolean isNameEqual(String otherName) {
-        return this.name != null && this.name.equalsIgnoreCase(otherName);
     }
 }

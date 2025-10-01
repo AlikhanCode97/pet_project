@@ -1,8 +1,6 @@
 package com.example.Games.config.exception.category;
 
-import com.example.Games.config.exception.ResourceNotFoundException;
-
-public class CategoryNotFoundException extends ResourceNotFoundException {
+public class CategoryNotFoundException extends RuntimeException {
     
     public CategoryNotFoundException(String message) {
         super(message);

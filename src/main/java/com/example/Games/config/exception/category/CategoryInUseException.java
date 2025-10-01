@@ -12,11 +12,4 @@ public class CategoryInUseException extends RuntimeException {
                 categoryName, gameCount)
         );
     }
-
-    public static CategoryInUseException withGamesById(Long categoryId, int gameCount) {
-        return new CategoryInUseException(
-            String.format("Cannot delete category with ID %d as it has %d associated games", 
-                categoryId, gameCount)
-        );
-    }
 }

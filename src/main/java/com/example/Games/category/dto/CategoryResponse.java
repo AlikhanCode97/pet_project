@@ -5,7 +5,8 @@ import java.time.LocalDateTime;
 public record CategoryResponse(
         Long id,
         String name,
-        int gameCount,
+        String createdByUsername,
+        Long createdById,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {}

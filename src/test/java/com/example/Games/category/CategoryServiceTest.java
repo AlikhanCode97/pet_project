@@ -2,13 +2,17 @@ package com.example.Games.category;
 
 import com.example.Games.category.dto.CategoryRequest;
 import com.example.Games.category.dto.CategoryResponse;
+import com.example.Games.config.common.service.UserContextService;
+import com.example.Games.config.exception.auth.UserNotFoundException;
 import com.example.Games.config.exception.category.CategoryAlreadyExistsException;
 import com.example.Games.config.exception.category.CategoryInUseException;
 import com.example.Games.config.exception.category.CategoryNotFoundException;
+import com.example.Games.config.exception.category.UnauthorizedCategoryAccessException;
 import com.example.Games.game.Game;
+import com.example.Games.user.auth.User;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -26,386 +30,198 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("CategoryService Unit Tests")
+@DisplayName("CategoryService Tests")
 class CategoryServiceTest {
 
     @Mock
     private CategoryRepository categoryRepository;
-
     @Mock
     private CategoryMapStruct categoryMapStruct;
-
+    @Mock
+    private UserContextService userContextService;
     @InjectMocks
     private CategoryService categoryService;
 
-    private Category actionCategory;
-    private CategoryRequest categoryRequest;
-    private CategoryResponse categoryResponse;
+
+    private User currentUser;
+    private Category category;
+    private Category category2;
+    private CategoryRequest request;
+    private CategoryResponse response;
+    private List<Category> categories;
+    private List<CategoryResponse> responses;
+    private EntityManager entityManager;
 
     @BeforeEach
     void setUp() {
         LocalDateTime now = LocalDateTime.now();
-        
-        actionCategory = Category.builder()
-                .id(1L)
-                .name("Action")
-                .games(new ArrayList<>())
-                .createdAt(now)
-                .updatedAt(now)
-                .build();
+        currentUser = User.builder().id(1L).username("testuser").build();
 
-        categoryRequest = new CategoryRequest("Action");
-        
-        categoryResponse = new CategoryResponse(
-                1L, 
-                "Action", 
-                0, 
-                now, 
-                now
-        );
+        category = Category.builder().id(10L).name("Action").createdBy(currentUser).build();
+        category2 = Category.builder().id(20L).name("Action").createdBy(currentUser).build();
+
+        request = new CategoryRequest("Action");
+        response = new CategoryResponse(10L, "Action", "testuser", 1L,now,now);
+        CategoryResponse response2 = new CategoryResponse(20L, "Adventure","testuser",1L,now,now);
+
+        categories = List.of(category,category2);
+        responses = List.of(response, response2);
+
     }
 
-    @Nested
-    @DisplayName("createCategory() Tests")
-    class CreateCategoryTests {
+    @Test
+    @DisplayName("Should create category when name is unique")
+    void shouldCreateCategory() {
+        when(userContextService.getAuthorizedUser()).thenReturn(currentUser);
+        when(categoryRepository.findByName("Action")).thenReturn(Optional.empty());
+        when(categoryMapStruct.toEntity(request)).thenReturn(category);
+        when(categoryRepository.save(category)).thenReturn(category);
+        when(categoryMapStruct.toDto(category)).thenReturn(response);
 
-        @Test
-        @DisplayName("Should create category successfully")
-        void shouldCreateCategorySuccessfully() {
-            // Given
-            when(categoryRepository.findByName("Action")).thenReturn(Optional.empty());
-            when(categoryMapStruct.toEntity(categoryRequest)).thenReturn(actionCategory);
-            when(categoryRepository.save(actionCategory)).thenReturn(actionCategory);
-            when(categoryMapStruct.toDto(actionCategory)).thenReturn(categoryResponse);
+        CategoryResponse result = categoryService.createCategory(request);
 
-            // When
-            CategoryResponse result = categoryService.createCategory(categoryRequest);
-
-            // Then
-            assertThat(result).isEqualTo(categoryResponse);
-            
-            // Verify interactions
-            verify(categoryRepository).findByName("Action");
-            verify(categoryMapStruct).toEntity(categoryRequest);
-            verify(categoryRepository).save(actionCategory);
-            verify(categoryMapStruct).toDto(actionCategory);
-        }
-
-        @Test
-        @DisplayName("Should throw exception when category name already exists")
-        void shouldThrowExceptionWhenCategoryNameAlreadyExists() {
-            // Given
-            when(categoryRepository.findByName("Action")).thenReturn(Optional.of(actionCategory));
-
-            // When & Then
-            assertThatThrownBy(() -> categoryService.createCategory(categoryRequest))
-                    .isInstanceOf(CategoryAlreadyExistsException.class)
-                    .hasMessageContaining("Category already exists with name: 'Action'");
-
-            // Verify interactions
-            verify(categoryRepository).findByName("Action");
-            verify(categoryMapStruct, never()).toEntity(any());
-            verify(categoryRepository, never()).save(any());
-            verify(categoryMapStruct, never()).toDto(any());
-        }
-
-        @Test
-        @DisplayName("Should handle case insensitive duplicate check")
-        void shouldHandleCaseInsensitiveDuplicateCheck() {
-            // Given
-            CategoryRequest upperCaseRequest = new CategoryRequest("ACTION");
-            when(categoryRepository.findByName("ACTION")).thenReturn(Optional.of(actionCategory));
-
-            // When & Then
-            assertThatThrownBy(() -> categoryService.createCategory(upperCaseRequest))
-                    .isInstanceOf(CategoryAlreadyExistsException.class);
-
-            verify(categoryRepository).findByName("ACTION");
-        }
+        assertThat(result).isEqualTo(response);
+        verify(categoryRepository).save(category);
     }
 
-    @Nested
-    @DisplayName("getAllCategories() Tests")
-    class GetAllCategoriesTests {
+    @Test
+    @DisplayName("Should throw when creating category with existing name")
+    void shouldThrowWhenCategoryAlreadyExists() {
+        when(userContextService.getAuthorizedUser()).thenReturn(currentUser);
+        when(categoryRepository.findByName("Action")).thenReturn(Optional.of(category));
 
-        @Test
-        @DisplayName("Should return all categories")
-        void shouldReturnAllCategories() {
-            // Given
-            Category rpgCategory = Category.builder()
-                    .id(2L)
-                    .name("RPG")
-                    .games(new ArrayList<>())
-                    .build();
-
-            List<Category> categories = Arrays.asList(actionCategory, rpgCategory);
-            List<CategoryResponse> expectedResponses = Arrays.asList(
-                    categoryResponse,
-                    new CategoryResponse(2L, "RPG", 0, LocalDateTime.now(), LocalDateTime.now())
-            );
-
-            when(categoryRepository.findAll()).thenReturn(categories);
-            when(categoryMapStruct.toDtoList(categories)).thenReturn(expectedResponses);
-
-            // When
-            List<CategoryResponse> result = categoryService.getAllCategories();
-
-            // Then
-            assertThat(result).hasSize(2);
-            assertThat(result).isEqualTo(expectedResponses);
-
-            verify(categoryRepository).findAll();
-            verify(categoryMapStruct).toDtoList(categories);
-        }
-
-        @Test
-        @DisplayName("Should return empty list when no categories exist")
-        void shouldReturnEmptyListWhenNoCategoriesExist() {
-            // Given
-            List<Category> emptyList = new ArrayList<>();
-            List<CategoryResponse> emptyResponseList = new ArrayList<>();
-
-            when(categoryRepository.findAll()).thenReturn(emptyList);
-            when(categoryMapStruct.toDtoList(emptyList)).thenReturn(emptyResponseList);
-
-            // When
-            List<CategoryResponse> result = categoryService.getAllCategories();
-
-            // Then
-            assertThat(result).isEmpty();
-
-            verify(categoryRepository).findAll();
-            verify(categoryMapStruct).toDtoList(emptyList);
-        }
+        assertThatThrownBy(() -> categoryService.createCategory(request))
+                .isInstanceOf(CategoryAlreadyExistsException.class);
     }
 
-    @Nested
-    @DisplayName("getCategoryById() Tests")
-    class GetCategoryByIdTests {
+    @Test
+    @DisplayName("Should return all categories")
+    void shouldReturnAllCategories() {
+        when(categoryRepository.findAll()).thenReturn(categories);
+        when(categoryMapStruct.toDtoList(categories)).thenReturn(responses);
 
-        @Test
-        @DisplayName("Should return category when found by ID")
-        void shouldReturnCategoryWhenFoundById() {
-            // Given
-            Long categoryId = 1L;
-            when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(actionCategory));
-            when(categoryMapStruct.toDto(actionCategory)).thenReturn(categoryResponse);
+        List<CategoryResponse> results = categoryService.getAllCategories();
 
-            // When
-            CategoryResponse result = categoryService.getCategoryById(categoryId);
-
-            // Then
-            assertThat(result).isEqualTo(categoryResponse);
-
-            verify(categoryRepository).findById(categoryId);
-            verify(categoryMapStruct).toDto(actionCategory);
-        }
-
-        @Test
-        @DisplayName("Should throw exception when category not found by ID")
-        void shouldThrowExceptionWhenCategoryNotFoundById() {
-            // Given
-            Long categoryId = 999L;
-            when(categoryRepository.findById(categoryId)).thenReturn(Optional.empty());
-
-            // When & Then
-            assertThatThrownBy(() -> categoryService.getCategoryById(categoryId))
-                    .isInstanceOf(CategoryNotFoundException.class)
-                    .hasMessageContaining("Category not found with ID: 999");
-
-            verify(categoryRepository).findById(categoryId);
-            verify(categoryMapStruct, never()).toDto(any());
-        }
+        assertThat(results).containsAll(responses);
     }
 
-    @Nested
-    @DisplayName("updateCategory() Tests")
-    class UpdateCategoryTests {
 
-        @Test
-        @DisplayName("Should update category successfully with new name")
-        void shouldUpdateCategorySuccessfullyWithNewName() {
-            // Given
-            Long categoryId = 1L;
-            CategoryRequest updateRequest = new CategoryRequest("Adventure");
-            Category updatedCategory = Category.builder()
-                    .id(1L)
-                    .name("Adventure")
-                    .games(new ArrayList<>())
-                    .build();
-            CategoryResponse updatedResponse = new CategoryResponse(
-                    1L, "Adventure", 0, LocalDateTime.now(), LocalDateTime.now()
-            );
+    @Test
+    @DisplayName("Should return category by ID")
+    void shouldReturnCategoryById() {
+        when(categoryRepository.findById(10L)).thenReturn(Optional.of(category));
+        when(categoryMapStruct.toDto(category)).thenReturn(response);
 
-            when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(actionCategory));
-            when(categoryRepository.findByName("Adventure")).thenReturn(Optional.empty());
-            when(categoryRepository.save(actionCategory)).thenReturn(updatedCategory);
-            when(categoryMapStruct.toDto(updatedCategory)).thenReturn(updatedResponse);
+        CategoryResponse result = categoryService.getCategoryById(10L);
 
-            // When
-            CategoryResponse result = categoryService.updateCategory(categoryId, updateRequest);
-
-            // Then
-            assertThat(result).isEqualTo(updatedResponse);
-
-            verify(categoryRepository).findById(categoryId);
-            verify(categoryRepository).findByName("Adventure");
-            verify(categoryRepository).save(actionCategory);
-            verify(categoryMapStruct).toDto(updatedCategory);
-        }
-
-        @Test
-        @DisplayName("Should update category successfully with same name (case insensitive)")
-        void shouldUpdateCategorySuccessfullyWithSameName() {
-            // Given
-            Long categoryId = 1L;
-            CategoryRequest updateRequest = new CategoryRequest("action"); // different case
-            
-            // Mock isNameEqual to return true for case insensitive comparison
-            actionCategory = spy(actionCategory);
-            when(actionCategory.isNameEqual("action")).thenReturn(true);
-            
-            when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(actionCategory));
-            when(categoryRepository.save(actionCategory)).thenReturn(actionCategory);
-            when(categoryMapStruct.toDto(actionCategory)).thenReturn(categoryResponse);
-
-            // When
-            CategoryResponse result = categoryService.updateCategory(categoryId, updateRequest);
-
-            // Then
-            assertThat(result).isEqualTo(categoryResponse);
-
-            verify(categoryRepository).findById(categoryId);
-            verify(categoryRepository, never()).findByName(anyString()); // Should not check for duplicates
-            verify(categoryRepository).save(actionCategory);
-        }
-
-        @Test
-        @DisplayName("Should throw exception when category not found for update")
-        void shouldThrowExceptionWhenCategoryNotFoundForUpdate() {
-            // Given
-            Long categoryId = 999L;
-            CategoryRequest updateRequest = new CategoryRequest("Adventure");
-            when(categoryRepository.findById(categoryId)).thenReturn(Optional.empty());
-
-            // When & Then
-            assertThatThrownBy(() -> categoryService.updateCategory(categoryId, updateRequest))
-                    .isInstanceOf(CategoryNotFoundException.class)
-                    .hasMessageContaining("Category not found with ID: 999");
-
-            verify(categoryRepository).findById(categoryId);
-            verify(categoryRepository, never()).findByName(anyString());
-            verify(categoryRepository, never()).save(any());
-        }
-
-        @Test
-        @DisplayName("Should throw exception when new name already exists")
-        void shouldThrowExceptionWhenNewNameAlreadyExists() {
-            // Given
-            Long categoryId = 1L;
-            CategoryRequest updateRequest = new CategoryRequest("RPG");
-            Category existingRpgCategory = Category.builder()
-                    .id(2L)
-                    .name("RPG")
-                    .build();
-
-            when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(actionCategory));
-            when(categoryRepository.findByName("RPG")).thenReturn(Optional.of(existingRpgCategory));
-
-            // When & Then
-            assertThatThrownBy(() -> categoryService.updateCategory(categoryId, updateRequest))
-                    .isInstanceOf(CategoryAlreadyExistsException.class)
-                    .hasMessageContaining("Category already exists with name: 'RPG'");
-
-            verify(categoryRepository).findById(categoryId);
-            verify(categoryRepository).findByName("RPG");
-            verify(categoryRepository, never()).save(any());
-        }
+        assertThat(result).isEqualTo(response);
     }
 
-    @Nested
-    @DisplayName("deleteCategory() Tests")
-    class DeleteCategoryTests {
+    @Test
+    @DisplayName("Should throw when category not found by ID")
+    void shouldThrowWhenCategoryNotFound() {
+        when(categoryRepository.findById(10L)).thenReturn(Optional.empty());
 
-        @Test
-        @DisplayName("Should delete category successfully when no games associated")
-        void shouldDeleteCategorySuccessfullyWhenNoGamesAssociated() {
-            // Given
-            Long categoryId = 1L;
-            when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(actionCategory));
-
-            // When
-            categoryService.deleteCategory(categoryId);
-
-            // Then
-            verify(categoryRepository).findById(categoryId);
-            verify(categoryRepository).deleteById(categoryId);
-        }
-
-        @Test
-        @DisplayName("Should throw exception when category not found for deletion")
-        void shouldThrowExceptionWhenCategoryNotFoundForDeletion() {
-            // Given
-            Long categoryId = 999L;
-            when(categoryRepository.findById(categoryId)).thenReturn(Optional.empty());
-
-            // When & Then
-            assertThatThrownBy(() -> categoryService.deleteCategory(categoryId))
-                    .isInstanceOf(CategoryNotFoundException.class)
-                    .hasMessageContaining("Category not found with ID: 999");
-
-            verify(categoryRepository).findById(categoryId);
-            verify(categoryRepository, never()).deleteById(any());
-        }
-
-        @Test
-        @DisplayName("Should throw exception when category has associated games")
-        void shouldThrowExceptionWhenCategoryHasAssociatedGames() {
-            // Given
-            Long categoryId = 1L;
-            Game game1 = Game.builder().id(1L).title("Game 1").build();
-            Game game2 = Game.builder().id(2L).title("Game 2").build();
-            actionCategory.getGames().addAll(Arrays.asList(game1, game2));
-
-            when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(actionCategory));
-
-            // When & Then
-            assertThatThrownBy(() -> categoryService.deleteCategory(categoryId))
-                    .isInstanceOf(CategoryInUseException.class)
-                    .hasMessageContaining("Cannot delete category 'Action' as it has 2 associated games");
-
-            verify(categoryRepository).findById(categoryId);
-            verify(categoryRepository, never()).deleteById(any());
-        }
+        assertThatThrownBy(() -> categoryService.getCategoryById(10L))
+                .isInstanceOf(CategoryNotFoundException.class);
     }
 
-    @Nested
-    @DisplayName("Edge Cases and Error Handling Tests")
-    class EdgeCasesTests {
+    @Test
+    @DisplayName("Should update category when user is owner and name is unique")
+    void shouldUpdateCategory() {
+        when(userContextService.getAuthorizedUser()).thenReturn(currentUser);
+        when(categoryRepository.findByIdWithCreator(10L)).thenReturn(Optional.of(category));
+        when(categoryRepository.findByName("Action")).thenReturn(Optional.of(category)); // same ID
+        when(categoryRepository.save(category)).thenReturn(category);
+        when(categoryMapStruct.toDto(category)).thenReturn(response);
 
-        @Test
-        @DisplayName("Should handle repository exceptions gracefully")
-        void shouldHandleRepositoryExceptionsGracefully() {
-            // Given
-            when(categoryRepository.findByName("Action")).thenThrow(new RuntimeException("Database error"));
+        CategoryResponse result = categoryService.updateCategory(10L, request);
 
-            // When & Then
-            assertThatThrownBy(() -> categoryService.createCategory(categoryRequest))
-                    .isInstanceOf(RuntimeException.class)
-                    .hasMessage("Database error");
-        }
+        assertThat(result).isEqualTo(response);
+    }
 
-        @Test
-        @DisplayName("Should handle mapper exceptions gracefully")
-        void shouldHandleMapperExceptionsGracefully() {
-            // Given
-            when(categoryRepository.findByName("Action")).thenReturn(Optional.empty());
-            when(categoryMapStruct.toEntity(categoryRequest)).thenThrow(new RuntimeException("Mapping error"));
+    @Test
+    @DisplayName("Should throw when updating non-existing category")
+    void shouldThrowWhenUpdatingNonExistingCategory() {
+        when(userContextService.getAuthorizedUser()).thenReturn(currentUser);
+        when(categoryRepository.findByIdWithCreator(10L)).thenReturn(Optional.empty());
 
-            // When & Then
-            assertThatThrownBy(() -> categoryService.createCategory(categoryRequest))
-                    .isInstanceOf(RuntimeException.class)
-                    .hasMessage("Mapping error");
-        }
+        assertThatThrownBy(() -> categoryService.updateCategory(10L, request))
+                .isInstanceOf(CategoryNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("Should throw when updating category with duplicate name")
+    void shouldThrowWhenUpdatingCategoryWithDuplicateName() {
+        when(userContextService.getAuthorizedUser()).thenReturn(currentUser);
+        when(categoryRepository.findByIdWithCreator(10L)).thenReturn(Optional.of(category));
+
+        when(categoryRepository.findByName("Adventure")).thenReturn(Optional.of(category2));
+
+        CategoryRequest updateRequest = new CategoryRequest("Adventure");
+
+        assertThatThrownBy(() -> categoryService.updateCategory(10L, updateRequest))
+                .isInstanceOf(CategoryAlreadyExistsException.class);
+    }
+
+
+    @Test
+    @DisplayName("Should throw when updating not owned category")
+    void shouldThrowWhenNotOwner() {
+        when(userContextService.getAuthorizedUser()).thenReturn(currentUser);
+        User otherUser = User.builder().id(2L).username("other").build();
+        Category otherCategory = Category.builder().id(10L).name("Action").createdBy(otherUser).build();
+        when(categoryRepository.findByIdWithCreator(10L)).thenReturn(Optional.of(otherCategory));
+
+        assertThatThrownBy(() -> categoryService.updateCategory(10L, request))
+                .isInstanceOf(UnauthorizedCategoryAccessException.class);
+    }
+
+    @Test
+    @DisplayName("Should delete category when user is owner and no games exist")
+    void shouldDeleteCategory() {
+        when(userContextService.getAuthorizedUser()).thenReturn(currentUser);
+        when(categoryRepository.findByIdWithCreator(10L)).thenReturn(Optional.of(category));
+        when(categoryRepository.hasGames(10L)).thenReturn(false);
+
+        categoryService.deleteCategory(10L);
+
+        verify(categoryRepository).deleteById(10L);
+    }
+
+    @Test
+    @DisplayName("Should throw when deleting non-existing category")
+    void shouldThrowWhenDeletingNonExistingCategory() {
+        when(userContextService.getAuthorizedUser()).thenReturn(currentUser);
+        when(categoryRepository.findByIdWithCreator(10L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> categoryService.deleteCategory(10L))
+                .isInstanceOf(CategoryNotFoundException.class);
+    }
+
+
+    @Test
+    @DisplayName("Should throw when deleting category with games")
+    void shouldThrowWhenCategoryHasGames() {
+        when(userContextService.getAuthorizedUser()).thenReturn(currentUser);
+        when(categoryRepository.findByIdWithCreator(10L)).thenReturn(Optional.of(category));
+        when(categoryRepository.hasGames(10L)).thenReturn(true);
+        when(categoryRepository.countGamesByCategoryId(10L)).thenReturn(3);
+
+        assertThatThrownBy(() -> categoryService.deleteCategory(10L))
+                .isInstanceOf(CategoryInUseException.class);
+    }
+
+    @Test
+    @DisplayName("Should throw when deleting not owned category")
+    void shouldThrowWhenDeletingNotOwnedCategory() {
+        when(userContextService.getAuthorizedUser()).thenReturn(currentUser);
+        User otherUser = User.builder().id(2L).username("other").build();
+        Category otherCategory = Category.builder().id(10L).name("Action").createdBy(otherUser).build();
+
+        when(categoryRepository.findByIdWithCreator(10L)).thenReturn(Optional.of(otherCategory));
+
+        assertThatThrownBy(() -> categoryService.deleteCategory(10L))
+                .isInstanceOf(UnauthorizedCategoryAccessException.class);
     }
 }

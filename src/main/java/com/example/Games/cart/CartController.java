@@ -8,6 +8,7 @@ import com.example.Games.cart.dto.CartSummaryResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -25,9 +26,8 @@ public class CartController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse<CartOperationResponse>> addToCart(@RequestBody @Valid AddToCartRequest request) {
         CartOperationResponse result = cartService.addToCart(request);
-        return ResponseEntity.ok(
-                responseMapper.toSuccessResponse("Game added to cart successfully", result)
-        );
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(responseMapper.toSuccessResponse("Game added to cart successfully", result));
     }
 
     @GetMapping
@@ -55,13 +55,6 @@ public class CartController {
         );
     }
 
-    @GetMapping("/count")
-    @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<ApiResponse<Integer>> getCartItemCount() {
-        int count = cartService.getCartItemCount();
-        return ResponseEntity.ok(responseMapper.toSuccessResponse(count));
-    }
-
     @DeleteMapping("/clear")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse<CartOperationResponse>> clearCart() {
@@ -71,21 +64,12 @@ public class CartController {
         );
     }
 
-    @PostMapping("/validate")
+    @GetMapping("/can-checkout")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<ApiResponse<Boolean>> validateCart() {
+    public ResponseEntity<ApiResponse<Boolean>> canCheckout() {
         boolean canCheckout = cartService.validateCartForCheckout();
         return ResponseEntity.ok(
                 responseMapper.toSuccessResponse("Cart validation completed", canCheckout)
-        );
-    }
-
-    @GetMapping("/validation-details")
-    @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<ApiResponse<CartService.CartValidationResponse>> getCartValidationDetails() {
-        CartService.CartValidationResponse details = cartService.getCartValidationDetails();
-        return ResponseEntity.ok(
-                responseMapper.toSuccessResponse("Cart validation details retrieved", details)
         );
     }
 }

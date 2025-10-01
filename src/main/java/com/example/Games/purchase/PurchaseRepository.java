@@ -19,44 +19,45 @@ public interface PurchaseRepository extends JpaRepository<PurchaseHistory, Long>
 
     // Check if user owns a game
     boolean existsByUserIdAndGameId(Long userId, Long gameId);
-    
-    Optional<PurchaseHistory> findByUserIdAndGameId(Long userId, Long gameId);
-    
-    // Get user's purchases
-    List<PurchaseHistory> findByUserOrderByPurchasedAtDesc(User user);
-    
-    List<PurchaseHistory> findByUserIdOrderByPurchasedAtDesc(Long userId);
-    
-    Page<PurchaseHistory> findByUser(User user, Pageable pageable);
-    
-    // Get purchases for a game
-    List<PurchaseHistory> findByGameOrderByPurchasedAtDesc(Game game);
-    
-    List<PurchaseHistory> findByGameIdOrderByPurchasedAtDesc(Long gameId);
-    
-    // Date range queries
-    @Query("SELECT p FROM PurchaseHistory p WHERE p.user = :user AND p.purchasedAt BETWEEN :startDate AND :endDate ORDER BY p.purchasedAt DESC")
-    List<PurchaseHistory> findByUserAndDateRange(
-            @Param("user") User user,
-            @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate
-    );
-    
-    // Statistics queries
-    @Query("SELECT COUNT(p) FROM PurchaseHistory p WHERE p.user = :user")
-    int countByUser(@Param("user") User user);
-    
-    @Query("SELECT SUM(p.purchasePrice) FROM PurchaseHistory p WHERE p.user = :user")
-    Optional<BigDecimal> calculateTotalSpentByUser(@Param("user") User user);
-    
-    // Get user's library (all games they own)
-    @Query("SELECT p.game FROM PurchaseHistory p WHERE p.user = :user")
-    List<Game> findGamesByUser(@Param("user") User user);
-    
-    // Developer sales query
-    @Query("SELECT p FROM PurchaseHistory p WHERE p.game.author.id = :developerId ORDER BY p.purchasedAt DESC")
-    List<PurchaseHistory> findSalesByDeveloperId(@Param("developerId") Long developerId);
-    
+
+    @Query("SELECT p.game.id FROM PurchaseHistory p WHERE p.user.id = :userId AND p.game.id IN :gameIds")
+    List<Long> findOwnedGameIds(@Param("userId") Long userId, @Param("gameIds") List<Long> gameIds);
+
+    @Query("SELECT p FROM PurchaseHistory p " +
+            "JOIN FETCH p.game g " +
+            "JOIN FETCH g.author " +
+            "WHERE p.user = :user " +
+            "ORDER BY p.purchasedAt DESC")
+    List<PurchaseHistory> findByUserWithGameAndAuthor(@Param("user") User user);
+
+    @Query(value = "SELECT p FROM PurchaseHistory p " +
+            "JOIN FETCH p.game g " +
+            "JOIN FETCH g.author " +
+            "WHERE p.user = :user",
+            countQuery = "SELECT COUNT(p) FROM PurchaseHistory p WHERE p.user = :user")
+    Page<PurchaseHistory> findByUserWithGameAndAuthor(@Param("user") User user, Pageable pageable);
+
+    @Query("SELECT p FROM PurchaseHistory p " +
+            "JOIN FETCH p.game g " +
+            "JOIN FETCH g.author " +
+            "WHERE p.user.id = :userId " +
+            "ORDER BY p.purchasedAt DESC")
+    List<PurchaseHistory> findByUserIdWithGameAndAuthor(@Param("userId") Long userId);
+
+    @Query("SELECT p FROM PurchaseHistory p " +
+            "JOIN FETCH p.game g " +
+            "JOIN FETCH g.author " +
+            "WHERE p.game.id = :gameId " +
+            "ORDER BY p.purchasedAt DESC")
+    List<PurchaseHistory> findByGameIdWithGameAndAuthor(@Param("gameId") Long gameId);
+
+    @Query("SELECT p FROM PurchaseHistory p " +
+            "JOIN FETCH p.game g " +
+            "JOIN FETCH g.author " +
+            "WHERE g.author.id = :developerId " +
+            "ORDER BY p.purchasedAt DESC")
+    List<PurchaseHistory> findSalesByDeveloperIdWithGame(@Param("developerId") Long developerId);
+
     @Query("SELECT SUM(p.purchasePrice) FROM PurchaseHistory p WHERE p.game.author.id = :developerId")
     Optional<BigDecimal> calculateTotalRevenueForDeveloper(@Param("developerId") Long developerId);
 }

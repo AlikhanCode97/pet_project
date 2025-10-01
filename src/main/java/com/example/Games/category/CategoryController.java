@@ -7,6 +7,7 @@ import com.example.Games.category.dto.CategoryResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -23,12 +24,11 @@ public class CategoryController {
     private final ResponseMapStruct responseMapper;
 
     @PostMapping
-    @PreAuthorize("hasAuthority('ROLE_DEVELOPER')")
+    @PreAuthorize("@authorizationUtils.isDeveloper()")
     public ResponseEntity<ApiResponse<CategoryResponse>> create(@RequestBody @Valid CategoryRequest request) {
         CategoryResponse category = categoryService.createCategory(request);
-        return ResponseEntity.ok(
-                responseMapper.toSuccessResponse("Category created successfully", category)
-        );
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(responseMapper.toSuccessResponse("Category created successfully", category));
     }
 
     @GetMapping
@@ -44,7 +44,7 @@ public class CategoryController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('ROLE_DEVELOPER')")
+    @PreAuthorize("@authorizationUtils.isDeveloper()")
     public ResponseEntity<ApiResponse<CategoryResponse>> update(@PathVariable Long id,
                                                                @RequestBody @Valid CategoryRequest updateRequest) {
         CategoryResponse category = categoryService.updateCategory(id, updateRequest);
@@ -54,7 +54,7 @@ public class CategoryController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('ROLE_DEVELOPER')")
+    @PreAuthorize("@authorizationUtils.isDeveloper()")
     public ResponseEntity<ApiResponse<Object>> delete(@PathVariable Long id) {
         categoryService.deleteCategory(id);
         return ResponseEntity.ok(

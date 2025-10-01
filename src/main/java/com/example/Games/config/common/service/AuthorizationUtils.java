@@ -32,6 +32,34 @@ public class AuthorizationUtils {
         return hasRole(auth, RoleType.DEVELOPER.name());
     }
 
+    public boolean isAdmin() {
+        return hasRole(RoleType.ADMIN.name());
+    }
+
+    public boolean isAdmin(Authentication auth) {
+        return hasRole(auth, RoleType.ADMIN.name());
+    }
+
+    public Long getCurrentUserId() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return extractUserId(auth);
+    }
+
+    private Long extractUserId(Authentication auth) {
+        if (auth == null || auth.getPrincipal() == null) {
+            return null;
+        }
+
+        Object principal = auth.getPrincipal();
+
+        if (principal instanceof JwtUserPrincipal jwtPrincipal) {
+            return jwtPrincipal.getUserId();
+        } else if (principal instanceof CustomUserDetails customUserDetails) {
+            return customUserDetails.getUserId();
+        }
+        return null;
+    }
+
     private String extractUserRole(Authentication auth) {
         Object principal = auth.getPrincipal();
         

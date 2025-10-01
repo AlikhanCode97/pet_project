@@ -6,6 +6,7 @@ import com.example.Games.user.balance.dto.*;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -19,44 +20,56 @@ public class BalanceController {
     private final BalanceService balanceService;
     private final ResponseMapStruct responseMapper;
 
-    @GetMapping
-    public ResponseEntity<ApiResponse<BalanceResponse>> getBalance() {
-        BalanceResponse balance = balanceService.getBalance();
-        return ResponseEntity.ok(responseMapper.toSuccessResponse(balance));
+    @GetMapping("/my")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<BalanceResponse>> getMyBalance() {
+        BalanceResponse balance = balanceService.getMyBalance();
+        return ResponseEntity.ok(
+                responseMapper.toSuccessResponse("Balance retrieved", balance)
+        );
     }
 
-    @GetMapping("/user/{userId}")
-    @PreAuthorize("@authUtils.isDeveloper()")
-    public ResponseEntity<ApiResponse<BalanceResponse>> getUserBalance(@PathVariable Long userId) {
-        BalanceResponse balance = balanceService.getUserBalance(userId);
+    @PostMapping("/create")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<BalanceResponse>> createBalance() {
+        BalanceResponse balance = balanceService.createBalance();
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(responseMapper.toSuccessResponse("Balance created successfully", balance));
+    }
+    
+    @DeleteMapping("/delete")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<Object>> deleteBalance() {
+        balanceService.deleteBalance();
         return ResponseEntity.ok(
-                responseMapper.toSuccessResponse("User balance retrieved", balance)
+                responseMapper.toSuccessResponse("Balance deleted successfully")
         );
     }
 
     @PostMapping("/deposit")
-    public ResponseEntity<ApiResponse<BalanceResponse>> deposit(@Valid @RequestBody DepositRequest request) {
-        BalanceResponse result = balanceService.deposit(request);
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<BalanceOperationResponse>> deposit(@Valid @RequestBody DepositRequest request) {
+        BalanceOperationResponse result = balanceService.deposit(request);
         return ResponseEntity.ok(
                 responseMapper.toSuccessResponse("Deposit completed successfully", result)
         );
     }
 
     @PostMapping("/withdraw")
-    public ResponseEntity<ApiResponse<BalanceResponse>> withdraw(@Valid @RequestBody WithdrawRequest request) {
-        BalanceResponse result = balanceService.withdraw(request);
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<BalanceOperationResponse>> withdraw(@Valid @RequestBody WithdrawRequest request) {
+        BalanceOperationResponse result = balanceService.withdraw(request);
         return ResponseEntity.ok(
                 responseMapper.toSuccessResponse("Withdrawal completed successfully", result)
         );
     }
 
-    @PostMapping("/admin/deposit/{userId}")
-    @PreAuthorize("@authUtils.isDeveloper()")
-    public ResponseEntity<ApiResponse<BalanceResponse>> depositForUser(@PathVariable Long userId,
-                                                                      @Valid @RequestBody DepositRequest request) {
-        BalanceResponse result = balanceService.depositForUser(userId, request.amount());
+    @GetMapping("/user/{userId}")
+    @PreAuthorize("@authorizationUtils.isAdmin()")
+    public ResponseEntity<ApiResponse<BalanceResponse>> getUserBalance(@PathVariable Long userId) {
+        BalanceResponse balance = balanceService.getUserBalance(userId);
         return ResponseEntity.ok(
-                responseMapper.toSuccessResponse("Admin deposit completed successfully", result)
+                responseMapper.toSuccessResponse("User balance retrieved", balance)
         );
     }
 }

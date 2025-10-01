@@ -12,11 +12,13 @@ public interface CategoryMapStruct {
 
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "games", ignore = true)
+    @Mapping(target = "createdBy", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
     Category toEntity(CategoryRequest request);
 
-    @Mapping(target = "gameCount", expression = "java(category.getGameCount())")
+    @Mapping(target = "createdByUsername", source = "createdBy.username")
+    @Mapping(target = "createdById", source = "createdBy.id")
     CategoryResponse toDto(Category category);
 
     List<CategoryResponse> toDtoList(List<Category> categories);

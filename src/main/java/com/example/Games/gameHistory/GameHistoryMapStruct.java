@@ -2,7 +2,6 @@ package com.example.Games.gameHistory;
 
 import com.example.Games.game.Game;
 import com.example.Games.gameHistory.dto.GameHistoryResponse;
-import com.example.Games.gameHistory.dto.GameTimelineResponse;
 import com.example.Games.gameHistory.dto.DeveloperActivityResponse;
 import com.example.Games.gameHistory.dto.FieldChange;
 import com.example.Games.user.auth.User;
@@ -29,24 +28,7 @@ public interface GameHistoryMapStruct {
     GameHistoryResponse toDto(GameHistory history);
 
     List<GameHistoryResponse> toDtoList(List<GameHistory> histories);
-    
-    default GameTimelineResponse toTimelineResponse(List<GameHistory> timeline) {
-        if (timeline == null || timeline.isEmpty()) {
-            return new GameTimelineResponse(null, null, null, null, 0L, null, List.of());
-        }
-        
-        return new GameTimelineResponse(
-            getGameId(timeline),
-            getGameTitle(timeline),
-            getCreatedBy(timeline),
-            getCreatedAt(timeline),
-            (long) timeline.size(),
-            getLastModified(timeline),
-            toDtoList(timeline)
-        );
-    }
 
-    // Factory methods for creating GameHistory entities
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "changedAt", ignore = true)
     @Mapping(target = "actionType", constant = "CREATE")
@@ -94,27 +76,6 @@ public interface GameHistoryMapStruct {
         };
     }
 
-    default Long getGameId(List<GameHistory> timeline) {
-        return timeline.isEmpty() ? null : timeline.getFirst().getGame().getId();
-    }
-
-    default String getGameTitle(List<GameHistory> timeline) {
-        return timeline.isEmpty() ? null : timeline.getFirst().getGame().getTitle();
-    }
-
-    default String getCreatedBy(List<GameHistory> timeline) {
-        return timeline.isEmpty() ? null : timeline.getFirst().getChangedBy().getUsername();
-    }
-
-    default LocalDateTime getCreatedAt(List<GameHistory> timeline) {
-        return timeline.isEmpty() ? null : timeline.getFirst().getChangedAt();
-    }
-
-    default LocalDateTime getLastModified(List<GameHistory> timeline) {
-        return timeline.isEmpty() ? null : timeline.getLast().getChangedAt();
-    }
-
-    // Create a helper method for developer activity mapping
     default DeveloperActivityResponse createDeveloperActivityResponse(
             User developer,
             long totalGamesCreated,

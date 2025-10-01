@@ -6,6 +6,7 @@ import com.example.Games.user.auth.dto.*;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,10 +20,11 @@ public class AuthController {
     private final ResponseMapStruct responseMapper;
 
     @PostMapping("/register")
-public ResponseEntity<ApiResponse<TokenResponse>> register(@RequestBody @Valid RegisterRequest request) {
-    TokenResponse response = authService.register(request);
-    return ResponseEntity.ok(responseMapper.toSuccessResponse("Registration successful", response));
-}
+    public ResponseEntity<ApiResponse<TokenResponse>> register(@RequestBody @Valid RegisterRequest request) {
+        TokenResponse response = authService.register(request);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(responseMapper.toSuccessResponse("Registration successful", response));
+    }
 
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<TokenResponse>> login(@RequestBody @Valid AuthRequest request) {
@@ -39,7 +41,7 @@ public ResponseEntity<ApiResponse<TokenResponse>> register(@RequestBody @Valid R
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<ApiResponse<Object>> logout(@RequestHeader("Authorization") String authHeader,
+    public ResponseEntity<ApiResponse<Object>> logout(@RequestHeader(value = "Authorization" , required = false) String authHeader,
                                                      @RequestBody(required = false) LogoutRequest request) {
         authService.logout(authHeader, request);
         return ResponseEntity.ok(

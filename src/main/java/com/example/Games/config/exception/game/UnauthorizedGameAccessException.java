@@ -6,15 +6,9 @@ public class UnauthorizedGameAccessException extends RuntimeException {
         super(message);
     }
 
-    public static UnauthorizedGameAccessException forModification(Long gameId, String username) {
+    public static UnauthorizedGameAccessException notOwner(Long gameId, String username) {
         return new UnauthorizedGameAccessException(
-            String.format("User '%s' is not authorized to modify game with ID: %d", username, gameId)
-        );
-    }
-
-    public static UnauthorizedGameAccessException forDeletion(Long gameId, String username) {
-        return new UnauthorizedGameAccessException(
-            String.format("User '%s' is not authorized to delete game with ID: %d", username, gameId)
+            String.format("User '%s' is not the owner of game with ID: %d", username, gameId)
         );
     }
 }

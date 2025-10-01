@@ -3,9 +3,7 @@ package com.example.Games.cart.dto;
 import java.math.BigDecimal;
 import java.util.List;
 
-/**
- * Response DTO for cart summary with statistics
- */
+
 public record CartSummaryResponse(
         List<CartItemResponse> items,
         int totalItems,

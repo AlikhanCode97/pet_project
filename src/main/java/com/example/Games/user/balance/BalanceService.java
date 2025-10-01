@@ -6,6 +6,8 @@ import com.example.Games.config.common.service.UserContextService;
 import com.example.Games.user.balance.transaction.BalanceTransaction;
 import com.example.Games.user.balance.transaction.BalanceTransactionRepository;
 import com.example.Games.user.balance.transaction.OperationType;
+import com.example.Games.config.exception.balance.BalanceNotFoundException;
+import com.example.Games.config.exception.balance.BalanceAlreadyExistsException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -25,41 +27,68 @@ public class BalanceService {
     private final BalanceTransactionRepository transactionRepository;
 
     private User getCurrentUser() {
-        return userContextService.getCurrentUser();
+        return userContextService.getAuthorizedUser();
     }
 
     @Transactional
-    public BalanceResponse getBalance() {
+    public BalanceResponse createBalance() {
         User user = getCurrentUser();
-        BigDecimal balance = getOrCreateBalance(user).getAmount();
-        return balanceMapper.toBalanceResponse(balance);
+
+        if (balanceRepository.findByUser(user).isPresent()) {
+            throw new BalanceAlreadyExistsException(user.getUsername());
+        }
+        
+        Balance newBalance = Balance.builder()
+                .user(user)
+                .amount(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP))
+                .build();
+        
+        Balance savedBalance = balanceRepository.save(newBalance);
+        log.info("Balance created for user: {}", user.getUsername());
+        
+        return balanceMapper.toBalanceResponse(user.getId(), savedBalance.getAmount());
     }
 
-    @Transactional
-    public BigDecimal getRawBalance() {
+    private Balance getBalance(User user) {
+        return balanceRepository.findByUser(user)
+                .orElseThrow(() -> new BalanceNotFoundException(user.getUsername()));
+    }
+
+    @Transactional(readOnly = true)
+    public BalanceResponse getMyBalance() {
         User user = getCurrentUser();
-        return getOrCreateBalance(user).getAmount();
+        Balance balance = getBalance(user);
+        return balanceMapper.toBalanceResponse(user.getId(), balance.getAmount());
     }
 
-    @Transactional
+
+    @Transactional(readOnly = true)
     public BalanceResponse getUserBalance(Long userId) {
         User user = userContextService.getUserById(userId);
-        BigDecimal balance = getOrCreateBalance(user).getAmount();
-        return balanceMapper.toUserBalanceResponse(userId, balance);
+        Balance balance = getBalance(user);
+        return balanceMapper.toBalanceResponse(userId, balance.getAmount());
     }
 
     @Transactional
-    public BalanceResponse deposit(DepositRequest request) {
+    public void deleteBalance() {
         User user = getCurrentUser();
-        Balance balance = getOrCreateBalance(user);
+        Balance balance = getBalance(user);
+        balanceRepository.delete(balance);
+        log.info("Balance deleted for user: {}", user.getUsername());
+    }
+
+    @Transactional
+    public BalanceOperationResponse deposit(DepositRequest request) {
+        User user = getCurrentUser();
+        Balance balance = getBalance(user);
         
         BigDecimal balanceBefore = balance.getAmount();
         balance.deposit(request.amount());
         balanceRepository.save(balance);
 
         BalanceTransaction transaction = balance.createTransaction(
-                OperationType.DEPOSIT, 
-                request.amount(), 
+                OperationType.DEPOSIT,
+                request.amount(),
                 balanceBefore
         );
         transactionRepository.save(transaction);
@@ -68,55 +97,18 @@ public class BalanceService {
                 user.getUsername(), request.amount(), balance.getAmount());
         
         return balanceMapper.toBalanceOperationResponse(
-                request.amount(), 
-                balance.getAmount(), 
-                "DEPOSIT"
+                balance.getAmount(),
+                user.getId(),
+                request.amount(),
+                OperationType.DEPOSIT
         );
     }
 
     @Transactional
-    public BalanceResponse depositForUser(Long userId, BigDecimal amount) {
-        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Admin deposit amount must be positive");
-        }
-        
-        User user = userContextService.getUserById(userId);
-        
-        Balance balance = getOrCreateBalance(user);
-        BigDecimal balanceBefore = balance.getAmount();
-        balance.deposit(amount);
-        balanceRepository.save(balance);
-        
-        BalanceTransaction transaction = balance.createTransaction(
-                OperationType.ADMIN_DEPOSIT, 
-                amount, 
-                balanceBefore
-        );
-        transactionRepository.save(transaction);
-        
-        log.info("Admin deposit successful - User: {}, Amount: ${}, New Balance: ${}", 
-                user.getUsername(), amount, balance.getAmount());
-        
-        return balanceMapper.toBalanceOperationResponse(
-                amount, 
-                balance.getAmount(), 
-                "ADMIN_DEPOSIT"
-        );
-    }
-
-    @Transactional
-    public BalanceResponse withdraw(WithdrawRequest request) {
+    public BalanceOperationResponse withdraw(WithdrawRequest request) {
         User user = getCurrentUser();
-        Balance balance = getOrCreateBalance(user);
-        
-        // Business rule: sufficient funds check
-        if (!balance.hasSufficientFunds(request.amount())) {
-            throw new IllegalArgumentException(
-                String.format("Insufficient funds. Current: $%.2f, Requested: $%.2f", 
-                    balance.getAmount(), request.amount())
-            );
-        }
-        
+        Balance balance = getBalance(user);
+
         BigDecimal balanceBefore = balance.getAmount();
         balance.withdraw(request.amount());
         balanceRepository.save(balance);
@@ -130,32 +122,27 @@ public class BalanceService {
 
         log.info("Withdrawal successful - User: {}, Amount: ${}, New Balance: ${}", 
                 user.getUsername(), request.amount(), balance.getAmount());
-        
+
         return balanceMapper.toBalanceOperationResponse(
-                request.amount(), 
-                balance.getAmount(), 
-                "WITHDRAWAL"
+                balance.getAmount(),
+                user.getId(),
+                request.amount(),
+                OperationType.WITHDRAWAL
         );
     }
 
     @Transactional(readOnly = true)
-    public boolean hasSufficientFunds(BigDecimal amount) {
+    public boolean canAfford(BigDecimal amount) {
+
         User user = getCurrentUser();
-        Balance balance = getOrCreateBalance(user);
+        Balance balance = getBalance(user);
         return balance.hasSufficientFunds(amount);
+
     }
 
     @Transactional
-    public BalanceTransaction createPurchaseTransaction(BigDecimal amount) {
-        User user = getCurrentUser();
-        Balance balance = getOrCreateBalance(user);
-
-        if (!balance.hasSufficientFunds(amount)) {
-            throw new IllegalArgumentException(
-                String.format("Insufficient funds. Current: $%.2f, Requested: $%.2f", 
-                    balance.getAmount(), amount)
-            );
-        }
+    public BalanceTransaction createPurchaseTransaction(BigDecimal amount , User currentUser) {
+        Balance balance = getBalance(currentUser);
         
         BigDecimal balanceBefore = balance.getAmount();
         balance.withdraw(amount);
@@ -167,17 +154,5 @@ public class BalanceService {
                 balanceBefore
         );
         return transactionRepository.save(transaction);
-    }
-
-    private Balance getOrCreateBalance(User user) {
-        return balanceRepository.findByUser(user)
-                .orElseGet(() -> {
-                    log.info("Creating new balance for user: {}", user.getUsername());
-                    Balance newBalance = Balance.builder()
-                            .user(user)
-                            .amount(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP))
-                            .build();
-                    return balanceRepository.save(newBalance);
-                });
     }
 }

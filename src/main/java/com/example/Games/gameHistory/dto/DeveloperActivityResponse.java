@@ -1,5 +1,6 @@
 package com.example.Games.gameHistory.dto;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 public record DeveloperActivityResponse(
@@ -9,6 +10,6 @@ public record DeveloperActivityResponse(
         long totalGamesCreated,
         long totalChanges,
         List<GameHistoryResponse> recentActivity,
-        java.time.LocalDateTime firstActivity,
-        java.time.LocalDateTime lastActivity
+        LocalDateTime firstActivity,
+        LocalDateTime lastActivity
 ) {}

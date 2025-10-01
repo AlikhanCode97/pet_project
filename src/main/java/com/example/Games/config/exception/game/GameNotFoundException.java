@@ -1,8 +1,6 @@
 package com.example.Games.config.exception.game;
 
-import com.example.Games.config.exception.ResourceNotFoundException;
-
-public class GameNotFoundException extends ResourceNotFoundException {
+public class GameNotFoundException extends RuntimeException {
     
     public GameNotFoundException(String message) {
         super(message);

@@ -1,6 +1,8 @@
 package com.example.Games.user.balance;
 
+import com.example.Games.user.balance.dto.BalanceOperationResponse;
 import com.example.Games.user.balance.dto.BalanceResponse;
+import com.example.Games.user.balance.transaction.OperationType;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
@@ -10,26 +12,17 @@ import java.math.BigDecimal;
 public interface BalanceMapStruct {
 
     @Mapping(target = "balance", source = "balance")
-    @Mapping(target = "userId", ignore = true)
-    @Mapping(target = "amount", ignore = true)
-    @Mapping(target = "operation", ignore = true)
-    BalanceResponse toBalanceResponse(BigDecimal balance);
-    
+    @Mapping(target = "userId", source = "userId")
+    BalanceResponse toBalanceResponse(Long userId, BigDecimal balance);
 
     @Mapping(target = "balance", source = "balance")
     @Mapping(target = "userId", source = "userId")
-    @Mapping(target = "amount", ignore = true)
-    @Mapping(target = "operation", ignore = true)
-    BalanceResponse toUserBalanceResponse(Long userId, BigDecimal balance);
-    
-
-    @Mapping(target = "balance", source = "newBalance")
-    @Mapping(target = "userId", ignore = true)
     @Mapping(target = "amount", source = "amount")
     @Mapping(target = "operation", source = "operation")
-    BalanceResponse toBalanceOperationResponse(
-            BigDecimal amount, 
-            BigDecimal newBalance, 
-            String operation
+    BalanceOperationResponse toBalanceOperationResponse(
+            BigDecimal balance,
+            Long userId,
+            BigDecimal amount,
+            OperationType operation
     );
 }

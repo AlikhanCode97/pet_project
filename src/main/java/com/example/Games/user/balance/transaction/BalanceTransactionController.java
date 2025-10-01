@@ -20,20 +20,21 @@ public class BalanceTransactionController {
     private final BalanceTransactionService transactionService;
     private final ResponseMapStruct responseMapper;
 
-    @GetMapping
-    public ResponseEntity<ApiResponse<List<BalanceTransactionDTO>>> getMyTransactions() {
-        List<BalanceTransactionDTO> transactions = transactionService.getMyTransactions();
-        return ResponseEntity.ok(
-                responseMapper.toSuccessResponse("Transaction history retrieved", transactions)
-        );
-    }
-
     @GetMapping("/user/{userId}")
-    @PreAuthorize("@authUtils.isDeveloper()")
+    @PreAuthorize("@authorizationUtils.isAdmin()")
     public ResponseEntity<ApiResponse<List<BalanceTransactionDTO>>> getUserTransactions(@PathVariable Long userId) {
         List<BalanceTransactionDTO> transactions = transactionService.getUserTransactions(userId);
         return ResponseEntity.ok(
                 responseMapper.toSuccessResponse("User transaction history retrieved", transactions)
+        );
+    }
+
+    @GetMapping("/me")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<List<BalanceTransactionDTO>>> getMyTransactions() {
+        List<BalanceTransactionDTO> transactions = transactionService.getMyTransactions();
+        return ResponseEntity.ok(
+                responseMapper.toSuccessResponse("My transaction history retrieved", transactions)
         );
     }
 }

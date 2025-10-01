@@ -7,6 +7,9 @@ import com.example.Games.game.dto.PagedResponse;
 import com.example.Games.game.dto.Response;
 import com.example.Games.game.dto.UpdateRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
+import org.springframework.http.HttpStatus;
+import org.springframework.validation.annotation.Validated;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -20,24 +23,25 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/games")
 @RequiredArgsConstructor
+@Validated
 public class GameController {
 
     private final GameService gameService;
     private final ResponseMapStruct responseMapper;
 
     @PostMapping
-    @PreAuthorize("hasAuthority('ROLE_DEVELOPER')")
+    @PreAuthorize("@authorizationUtils.isDeveloper()")
     public ResponseEntity<ApiResponse<Response>> createGame(@Valid @RequestBody CreateRequest request) {
         Response response = gameService.createGame(request);
-        return ResponseEntity.ok(
-                responseMapper.toSuccessResponse("Game created successfully", response)
-        );
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(responseMapper.toSuccessResponse("Game created successfully", response));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('ROLE_DEVELOPER')")
-    public ResponseEntity<ApiResponse<Response>> updateGame(@PathVariable Long id, 
-                                                           @Valid @RequestBody UpdateRequest request) {
+    @PreAuthorize("@authorizationUtils.isDeveloper()")
+    public ResponseEntity<ApiResponse<Response>> updateGame(
+            @PathVariable @Positive Long id,
+            @Valid @RequestBody UpdateRequest request) {
         Response response = gameService.updateGame(id, request);
         return ResponseEntity.ok(
                 responseMapper.toSuccessResponse("Game updated successfully", response)
@@ -47,13 +51,13 @@ public class GameController {
     @GetMapping
     public ResponseEntity<ApiResponse<List<Response>>> getAllGames() {
         List<Response> games = gameService.getAllGames();
-        return ResponseEntity.ok(responseMapper.toSuccessResponse(games));
+        return ResponseEntity.ok(responseMapper.toSuccessResponse("Games retrieved successfully",games));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<Response>> getGameById(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<Response>> getGameById(@PathVariable @Positive Long id) {
         Response response = gameService.getGameById(id);
-        return ResponseEntity.ok(responseMapper.toSuccessResponse(response));
+        return ResponseEntity.ok(responseMapper.toSuccessResponse("Game retrieved successfully",response));
     }
 
     @GetMapping("/title/{title}")
@@ -63,8 +67,8 @@ public class GameController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('ROLE_DEVELOPER')")
-    public ResponseEntity<ApiResponse<Object>> deleteGame(@PathVariable Long id) {
+    @PreAuthorize("@authorizationUtils.isDeveloper()")
+    public ResponseEntity<ApiResponse<Object>> deleteGame(@PathVariable @Positive Long id) {
         gameService.deleteGame(id);
         return ResponseEntity.ok(
                 responseMapper.toSuccessResponse("Game deleted successfully")
@@ -88,7 +92,7 @@ public class GameController {
     }
 
     @GetMapping("/filter/price")
-    public ResponseEntity<ApiResponse<List<Response>>> filterByPriceRange(@RequestParam BigDecimal min, 
+    public ResponseEntity<ApiResponse<List<Response>>> filterByPriceRange(@RequestParam BigDecimal min,
                                                                          @RequestParam BigDecimal max) {
         List<Response> games = gameService.getGamesInPriceRange(min, max);
         return ResponseEntity.ok(
@@ -107,21 +111,12 @@ public class GameController {
 
     @GetMapping("/category/{categoryId}")
     public ResponseEntity<ApiResponse<PagedResponse>> getGamesByCategory(
-            @PathVariable Long categoryId,
+            @PathVariable @Positive Long categoryId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
         PagedResponse games = gameService.getGamesByCategoryPaged(categoryId, page, size);
         return ResponseEntity.ok(
                 responseMapper.toSuccessResponse("Games retrieved for category", games)
-        );
-    }
-
-    @GetMapping("/my-games")
-    @PreAuthorize("hasAuthority('ROLE_DEVELOPER')")
-    public ResponseEntity<ApiResponse<List<Response>>> getMyGames() {
-        List<Response> games = gameService.getMyGames();
-        return ResponseEntity.ok(
-                responseMapper.toSuccessResponse("Your games retrieved", games)
         );
     }
 }

@@ -39,7 +39,6 @@ public class CartItem {
     @Column(name = "added_at", nullable = false, updatable = false)
     private LocalDateTime addedAt;
 
-    // Business logic methods
     public boolean belongsToUser(User user) {
         return this.user != null && this.user.equals(user);
     }

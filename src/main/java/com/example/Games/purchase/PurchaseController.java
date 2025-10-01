@@ -2,34 +2,33 @@ package com.example.Games.purchase;
 
 import com.example.Games.config.common.mappers.ResponseMapStruct;
 import com.example.Games.config.common.dto.ApiResponse;
+import com.example.Games.purchase.dto.PurchaseGamesRequest;
 import com.example.Games.purchase.dto.PurchaseResponse;
-import com.example.Games.purchase.dto.PurchaseStatsResponse;
-import com.example.Games.game.dto.Response;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.List;
 
 @Slf4j
 @RestController
 @RequestMapping("/api/v1/purchase")
 @RequiredArgsConstructor
+@Validated
 public class PurchaseController {
 
     private final PurchaseService purchaseService;
     private final ResponseMapStruct responseMapper;
 
-    // ============= PURCHASE OPERATIONS =============
-
     @PostMapping("/game/{gameId}")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse<PurchaseResponse>> purchaseGame(@PathVariable Long gameId) {
         PurchaseResponse result = purchaseService.purchaseGame(gameId);
         return ResponseEntity.ok(
@@ -38,8 +37,9 @@ public class PurchaseController {
     }
 
     @PostMapping("/games")
-    public ResponseEntity<ApiResponse<List<PurchaseResponse>>> purchaseGames(@RequestBody List<Long> gameIds) {
-        List<PurchaseResponse> results = purchaseService.purchaseGamesByIds(gameIds);
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<List<PurchaseResponse>>> purchaseGames(@RequestBody @Valid PurchaseGamesRequest request) {
+        List<PurchaseResponse> results = purchaseService.purchaseGamesByIds(request);
         return ResponseEntity.ok(
                 responseMapper.toSuccessResponse(
                         String.format("%d games purchased successfully", results.size()), 
@@ -47,9 +47,8 @@ public class PurchaseController {
         );
     }
 
-    // ============= PURCHASE HISTORY =============
-
     @GetMapping("/history")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse<List<PurchaseResponse>>> getMyPurchaseHistory() {
         List<PurchaseResponse> history = purchaseService.getMyPurchaseHistory();
         return ResponseEntity.ok(
@@ -58,6 +57,7 @@ public class PurchaseController {
     }
 
     @GetMapping("/history/paged")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse<Page<PurchaseResponse>>> getMyPurchaseHistoryPaged(Pageable pageable) {
         Page<PurchaseResponse> history = purchaseService.getMyPurchaseHistoryPaged(pageable);
         return ResponseEntity.ok(
@@ -65,30 +65,8 @@ public class PurchaseController {
         );
     }
 
-    @GetMapping("/history/date-range")
-    public ResponseEntity<ApiResponse<List<PurchaseResponse>>> getPurchasesByDateRange(
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate) {
-        List<PurchaseResponse> purchases = purchaseService.getPurchasesByDateRange(startDate, endDate);
-        return ResponseEntity.ok(
-                responseMapper.toSuccessResponse("Purchases retrieved for date range", purchases)
-        );
-    }
-
-    // ============= STATISTICS =============
-
-    @GetMapping("/stats")
-    public ResponseEntity<ApiResponse<PurchaseStatsResponse>> getMyPurchaseStats() {
-        PurchaseStatsResponse stats = purchaseService.getMyPurchaseStats();
-        return ResponseEntity.ok(
-                responseMapper.toSuccessResponse("Purchase statistics retrieved", stats)
-        );
-    }
-
-    // ============= DEVELOPER OPERATIONS =============
-
     @GetMapping("/admin/user/{userId}/history")
-    @PreAuthorize("hasAuthority('ROLE_DEVELOPER')")
+    @PreAuthorize("@authorizationUtils.isAdmin()")
     public ResponseEntity<ApiResponse<List<PurchaseResponse>>> getUserPurchaseHistory(@PathVariable Long userId) {
         List<PurchaseResponse> history = purchaseService.getUserPurchaseHistory(userId);
         return ResponseEntity.ok(
@@ -97,7 +75,7 @@ public class PurchaseController {
     }
 
     @GetMapping("/admin/game/{gameId}/purchases")
-    @PreAuthorize("hasAuthority('ROLE_DEVELOPER')")
+    @PreAuthorize("@authorizationUtils.isAdmin()")
     public ResponseEntity<ApiResponse<List<PurchaseResponse>>> getGamePurchases(@PathVariable Long gameId) {
         List<PurchaseResponse> purchases = purchaseService.getGamePurchases(gameId);
         return ResponseEntity.ok(
@@ -106,7 +84,7 @@ public class PurchaseController {
     }
 
     @GetMapping("/developer/sales")
-    @PreAuthorize("hasAuthority('ROLE_DEVELOPER')")
+    @PreAuthorize("@authorizationUtils.isDeveloper()")
     public ResponseEntity<ApiResponse<List<PurchaseResponse>>> getMySales() {
         List<PurchaseResponse> sales = purchaseService.getMySales();
         return ResponseEntity.ok(
@@ -115,7 +93,7 @@ public class PurchaseController {
     }
 
     @GetMapping("/developer/revenue")
-    @PreAuthorize("hasAuthority('ROLE_DEVELOPER')")
+    @PreAuthorize("@authorizationUtils.isDeveloper()")
     public ResponseEntity<ApiResponse<BigDecimal>> getMyTotalRevenue() {
         BigDecimal revenue = purchaseService.getMyTotalRevenue();
         return ResponseEntity.ok(
